@@ -6,8 +6,13 @@
 // Event storage
 const listeners = {};
 
+// Local state cache
+const state = {};
+
 // The main Pytron Proxy
 const pytron = new Proxy({
+    state: state, // Expose state object directly
+
     /**
      * Listen for an event sent from the Python backend.
      * @param {string} event - The event name.
@@ -29,7 +34,7 @@ const pytron = new Proxy({
     }
 }, {
     get: (target, prop) => {
-        // Return local methods if they exist (on, off)
+        // Return local methods/properties if they exist
         if (prop in target) return target[prop];
 
         // Otherwise, proxy to the backend
@@ -40,10 +45,6 @@ const pytron = new Proxy({
             }
 
             if (typeof window.pywebview.api[prop] !== 'function') {
-                // Check if it's a system method (nested under 'system')
-                // This is a simple heuristic; for a deeper nesting we might need a recursive proxy,
-                // but for now let's keep it flat or assume the user calls pytron.system_notification()
-                // or we can expose system methods as top level 'system_...'
                 throw new Error(`Method '${String(prop)}' not found on Pytron backend.`);
             }
 
@@ -59,6 +60,16 @@ const pytron = new Proxy({
 
 // Internal dispatcher called by Python
 window.__pytron_dispatch = (event, data) => {
+    // Handle internal state updates automatically
+    if (event === 'pytron:state-update') {
+        state[data.key] = data.value;
+        // We also re-emit it as a generic event so users can subscribe to specific keys if they want
+        // e.g. pytron.on('state:username', ...)
+        if (listeners[`state:${data.key}`]) {
+            listeners[`state:${data.key}`].forEach(cb => cb(data.value));
+        }
+    }
+
     if (listeners[event]) {
         listeners[event].forEach(cb => cb(data));
     }

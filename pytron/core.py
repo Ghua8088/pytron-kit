@@ -41,6 +41,32 @@ class SystemAPI:
             return self.window._window.create_file_dialog(webview.SAVE_DIALOG, save_filename=save_filename, file_types=file_types)
 
 
+class ReactiveState:
+    """
+    A magic object that syncs its attributes to the frontend automatically.
+    """
+    def __init__(self, app):
+        # Use super().__setattr__ to avoid triggering our own hook for internal vars
+        super().__setattr__('_app', app)
+        super().__setattr__('_data', {})
+
+    def __setattr__(self, key, value):
+        # Store the value
+        self._data[key] = value
+        
+        # Broadcast to all windows
+        if hasattr(self, '_app') and self._app:
+            for window in self._app.windows:
+                # We emit a specific system event
+                window.emit('pytron:state-update', {'key': key, 'value': value})
+
+    def __getattr__(self, key):
+        return self._data.get(key)
+        
+    def to_dict(self):
+        return self._data
+
+
 class Window:
     def __init__(self, title, url=None, html=None, js_api=None, width=800, height=600, 
                  resizable=True, fullscreen=False, min_size=(200, 100), hidden=False, 
@@ -74,17 +100,26 @@ class Window:
         self._window = None
         self._exposed_functions = {}
 
-    def expose(self, func, name=None):
+    def expose(self, func=None, name=None):
         """
-        Expose a Python function to JavaScript.
-        If name is not provided, the function name is used.
+        Expose a Python function to JavaScript. Can be used as a decorator.
+        @window.expose
+        def my_func(): ...
         """
         if self._window:
              raise RuntimeError("Cannot expose functions after window creation. Call expose() before app.run() or window.create().")
+        
+        # Handle decorator usage: @window.expose or @window.expose(name="foo")
+        if func is None:
+            def decorator(f):
+                self.expose(f, name=name)
+                return f
+            return decorator
              
         if name is None:
             name = func.__name__
         self._exposed_functions[name] = func
+        return func
 
     def minimize(self):
         if self._window:
@@ -157,11 +192,24 @@ class Window:
                     if callable(attr):
                         methods[attr_name] = attr
 
-        # 2. Add explicitly exposed functions
+        # 2. Add explicitly exposed functions (Window level)
         for name, func in self._exposed_functions.items():
             def wrapper(self, *args, _func=func, **kwargs):
                 return _func(*args, **kwargs)
             methods[name] = wrapper
+
+        # 2.5 Add Global App exposed functions (App level)
+        # We assume self.app_ref might exist if we link them, or we can pass it in.
+        # For now, let's assume the user might have passed it or we can't access it easily 
+        # without changing __init__. 
+        # Actually, let's check if we can access the parent app. 
+        # Since Window is usually created by App, we can inject the app reference in App.create_window.
+        if hasattr(self, '_app_ref') and self._app_ref:
+             for name, func in self._app_ref._exposed_functions.items():
+                if name not in methods: # Window specific overrides global
+                    def wrapper(self, *args, _func=func, **kwargs):
+                        return _func(*args, **kwargs)
+                    methods[name] = wrapper
 
         # 3. Add window management methods automatically
         # We expose them with a prefix or just as is? 
@@ -234,12 +282,23 @@ class Window:
         if self.on_restored: self._window.events.restored += self.on_restored
         if self.on_resized: self._window.events.resized += self.on_resized
         if self.on_moved: self._window.events.moved += self.on_moved
+        
+        # Inject initial state if available
+        if hasattr(self, '_app_ref') and self._app_ref and hasattr(self._app_ref, 'state'):
+            # We need to wait for the window to be ready to receive events, 
+            # but pywebview doesn't have a perfect "ready for JS" event that guarantees listeners are set.
+            # We can expose a method 'pytron_init' that the client calls?
+            # Or just try to emit after a short delay?
+            # For now, let's rely on the client asking for state or just pushing updates.
+            pass
 
 class App:
     def __init__(self, config_file='settings.json'):
         self.windows = []
         self.is_running = False
         self.config = {}
+        self._exposed_functions = {} # Global functions for all windows
+        self.state = ReactiveState(self) # Magic state object
         
         # Load config
         # Try to find settings.json
@@ -297,6 +356,9 @@ class App:
             easy_drag=get_val(kwargs.get('easy_drag'), 'easy_drag', True),
             **{k: v for k, v in kwargs.items() if k not in ['resizable', 'fullscreen', 'min_size', 'hidden', 'frameless', 'easy_drag']}
         )
+        # Link app reference to window so it can access global exposed functions
+        window._app_ref = self
+        
         self.windows.append(window)
         
         # If the app is already running, create the window immediately.
@@ -321,3 +383,19 @@ class App:
     def quit(self):
         for window in self.windows:
             window.destroy()
+
+    def expose(self, func=None, name=None):
+        """
+        Expose a function to ALL windows created by this App.
+        Can be used as a decorator: @app.expose
+        """
+        if func is None:
+            def decorator(f):
+                self.expose(f, name=name)
+                return f
+            return decorator
+            
+        if name is None:
+            name = func.__name__
+        self._exposed_functions[name] = func
+        return func
