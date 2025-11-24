@@ -1,0 +1,9 @@
+{
+    "title": "My Pytron App",
+    "width": 800,
+    "height": 600,
+    "resizable": true,
+    "frameless": false,
+    "easy_drag": true,
+    "url": "frontend/dist/index.html"
+}

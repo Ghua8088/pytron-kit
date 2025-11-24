@@ -1,0 +1,14 @@
+# Ignore build and dist folders
+build
+dist
+
+# Ignore virtual environment
+venv
+
+# Ignore IDE files
+.idea
+.vscode
+
+# Ignore Python cache
+__pycache__
+pytron.egg-info

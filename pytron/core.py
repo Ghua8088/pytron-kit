@@ -16,7 +16,7 @@ class Window:
                  resizable=True, fullscreen=False, min_size=(200, 100), hidden=False, 
                  frameless=False, easy_drag=True, on_loaded=None, on_closing=None, 
                  on_closed=None, on_shown=None, on_minimized=None, on_maximized=None, 
-                 on_restored=None, on_resized=None, on_moved=None):
+                 on_restored=None, on_resized=None, on_moved=None, **kwargs):
         self.title = title
         self.url = url
         self.html = html
@@ -177,12 +177,67 @@ class Window:
         if self.on_moved: self._window.events.moved += self.on_moved
 
 class App:
-    def __init__(self):
+    def __init__(self, config_file='settings.json'):
         self.windows = []
         self.is_running = False
+        self.config = {}
+        
+        # Load config
+        # Try to find settings.json
+        # 1. Using get_resource_path (handles PyInstaller)
+        path = get_resource_path(config_file)
+        if not os.path.exists(path):
+            # 2. Try relative to the current working directory (useful during dev if running from root)
+            path = os.path.abspath(config_file)
+            
+        if os.path.exists(path):
+            try:
+                import json
+                with open(path, 'r') as f:
+                    self.config = json.load(f)
+                # print(f"[Pytron] Loaded settings from {path}")
+            except Exception as e:
+                print(f"[Pytron] Failed to load settings: {e}")
 
-    def create_window(self, title, url=None, html=None, js_api=None, width=800, height=600, **kwargs):
-        window = Window(title, url, html, js_api, width, height, **kwargs)
+    def create_window(self, title=None, url=None, html=None, js_api=None, width=None, height=None, **kwargs):
+        # Merge config with arguments. Arguments take precedence.
+        
+        # Helper to get value from arg, then config, then default
+        def get_val(arg, key, default):
+            if arg is not None:
+                return arg
+            return self.config.get(key, default)
+
+        # Resolve URL
+        final_url = url
+        if final_url is None:
+            final_url = self.config.get('url')
+            # If we got a URL from config, check if it needs path resolution
+            if final_url and not final_url.startswith('http') and not final_url.startswith('file://'):
+                final_url = get_resource_path(final_url)
+                if not os.path.exists(final_url):
+                    # Fallback check relative to cwd
+                    cwd_path = os.path.abspath(self.config.get('url'))
+                    if os.path.exists(cwd_path):
+                        final_url = cwd_path
+
+        # Construct window with resolved values
+        # Note: We pass defaults here that match the original Window.__init__ defaults if not in config
+        window = Window(
+            title=get_val(title, 'title', 'Pytron App'),
+            url=final_url,
+            html=get_val(html, 'html', None),
+            js_api=js_api,
+            width=get_val(width, 'width', 800),
+            height=get_val(height, 'height', 600),
+            resizable=get_val(kwargs.get('resizable'), 'resizable', True),
+            fullscreen=get_val(kwargs.get('fullscreen'), 'fullscreen', False),
+            min_size=get_val(kwargs.get('min_size'), 'min_size', (200, 100)),
+            hidden=get_val(kwargs.get('hidden'), 'hidden', False),
+            frameless=get_val(kwargs.get('frameless'), 'frameless', False),
+            easy_drag=get_val(kwargs.get('easy_drag'), 'easy_drag', True),
+            **{k: v for k, v in kwargs.items() if k not in ['resizable', 'fullscreen', 'min_size', 'hidden', 'frameless', 'easy_drag']}
+        )
         self.windows.append(window)
         
         # If the app is already running, create the window immediately.
@@ -192,7 +247,7 @@ class App:
             
         return window
 
-    def run(self, debug=False, menu=None):
+    def run(self, debug=False, menu=None, **kwargs):
         self.is_running = True
         # Create any pending windows
         for window in self.windows:
@@ -201,7 +256,7 @@ class App:
                 
         # pywebview.start() is a blocking call that runs the GUI loop
         # Menu is passed to start() in pywebview
-        webview.start(debug=debug, menu=menu)
+        webview.start(debug=debug, menu=menu, **kwargs)
         self.is_running = False
 
     def quit(self):
