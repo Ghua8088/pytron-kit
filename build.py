@@ -1,8 +1,20 @@
+import argparse
+import os
+import runpy
 import subprocess
 import sys
-import os
-import argparse
 
+if __name__ == '__main__' and globals().get('__spec__') and __spec__.name == 'build':
+    # Delegate to the real PEP 517 `build` package so `python -m build` keeps working
+    paths = sys.path.copy()
+    try:
+        # Remove the current working directory so the local build.py is not re-imported
+        trimmed = [p for p in paths if p and os.path.abspath(p) != os.getcwd()]
+        sys.path[:] = trimmed
+        runpy.run_module('build', run_name='__main__')
+    finally:
+        sys.path[:] = paths
+    raise SystemExit()
 def build_app(script_path, app_name=None, onefile=True, noconsole=True, add_data=None):
     """
     Builds a Pytron application using PyInstaller.
