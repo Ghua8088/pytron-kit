@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=65.5.1", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pytron"
+version = "0.1.0"
+description = "An Electron-like library for Python using pywebview"
+readme = "README.md"
+requires-python = ">=3.6"
+license = { text = "MIT" }
+keywords = ["pywebview", "electron", "app", "desktop"]
+authors = [
+  { name = "Ghua8088" }
+]
+dependencies = [
+  "pywebview",
+  "pyinstaller",
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.scripts]
+pytron = "pytron.cli:main"
