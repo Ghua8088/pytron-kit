@@ -1,0 +1,36 @@
+name: Publish
+
+on:
+  push:
+    branches: [ main ]
+  release:
+    types: [ published ]
+
+jobs:
+  build:
+    name: Build & Verify
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install requirements
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
+          python -m pip install build
+
+      - name: Build distribution
+        run: python -m build
+
+      - name: Archive dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: pytron-package/dist
