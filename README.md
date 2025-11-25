@@ -1,4 +1,6 @@
 
+# Banner: pytron.png
+![Pytron](/pytron/pytron.png)
 # Pytron
 
 This guide provides a step-by-step walkthrough for building desktop applications using the Pytron framework. Pytron combines the power of Python's backend capabilities with the rich user interface of modern web frameworks like React.

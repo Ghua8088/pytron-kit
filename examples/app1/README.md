@@ -1,3 +1,5 @@
+# Banner: pytron.png
+![Pytron](/pytron/pytron.png)
 # My Pytron App
 
 Built with Pytron CLI init template.

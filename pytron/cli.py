@@ -302,6 +302,58 @@ def cmd_package(args: argparse.Namespace) -> int:
         return 1
     package_dir = Path(pytron.__file__).resolve().parent.parent
     
+    # Icon handling
+    # Icon handling
+    app_icon = args.icon
+    
+    # Check settings.json for icon
+    if not app_icon:
+        # We already loaded settings earlier to get the title
+        # But we need to make sure 'settings' variable is available here
+        # It was loaded in a try-except block above, let's re-ensure we have it or reuse it
+        # The previous block defined 'settings' inside try, so it might not be bound if exception occurred.
+        # Let's re-load safely or assume it's empty if not found.
+        pass # We will use the 'settings' dict if it exists from the block above
+        
+    # Re-load settings safely just in case scope is an issue or to be clean
+    settings = {}
+    try:
+        settings_path = script.parent / 'settings.json'
+        if settings_path.exists():
+            settings = json.loads(settings_path.read_text())
+    except Exception:
+        pass
+
+    if not app_icon:
+        config_icon = settings.get('icon')
+        if config_icon:
+            possible_icon = script.parent / config_icon
+            if possible_icon.exists():
+                # Check extension
+                if possible_icon.suffix.lower() == '.png':
+                    # Try to convert to .ico
+                    try:
+                        from PIL import Image
+                        print(f"[Pytron] Converting {possible_icon.name} to .ico for packaging...")
+                        img = Image.open(possible_icon)
+                        ico_path = possible_icon.with_suffix('.ico')
+                        img.save(ico_path, format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
+                        app_icon = str(ico_path)
+                    except ImportError:
+                        print(f"[Pytron] Warning: Icon is .png but Pillow is not installed. Cannot convert to .ico.")
+                        print(f"[Pytron] Install Pillow (pip install Pillow) or provide an .ico file.")
+                    except Exception as e:
+                        print(f"[Pytron] Warning: Failed to convert .png to .ico: {e}")
+                elif possible_icon.suffix.lower() == '.ico':
+                    app_icon = str(possible_icon)
+                else:
+                    print(f"[Pytron] Warning: Icon file must be .ico (or .png with Pillow installed). Ignoring {possible_icon.name}")
+
+    # Fallback to Pytron icon
+    pytron_icon = package_dir / 'installer' / 'pytron.ico'
+    if not app_icon and pytron_icon.exists():
+        app_icon = str(pytron_icon)
+
     cmd = [
         sys.executable, '-m', 'PyInstaller', 
         '--onedir', 
@@ -310,6 +362,11 @@ def cmd_package(args: argparse.Namespace) -> int:
         '--name', out_name, 
         str(script)
     ]
+    
+    if app_icon:
+        cmd.extend(['--icon', app_icon])
+        print(f"[Pytron] Using icon: {app_icon}")
+
     cmd.append('--noconsole')
 
     # Auto-detect and include assets
@@ -434,8 +491,16 @@ def cmd_package(args: argparse.Namespace) -> int:
             f"/DBUILD_DIR={build_dir_abs}",
             f"/DMAIN_EXE_NAME={out_name}.exe",
             f"/DOUT_DIR={script.parent.resolve()}",
-            str(nsi_script)
         ]
+        
+        # Pass icon to NSIS if available
+        if app_icon:
+            abs_icon = Path(app_icon).resolve()
+            cmd_nsis.append(f'/DMUI_ICON={abs_icon}')
+            cmd_nsis.append(f'/DMUI_UNICON={abs_icon}')
+            
+        cmd_nsis.append(str(nsi_script))
+        
         print(f"Running NSIS: {' '.join(cmd_nsis)}")
         return subprocess.call(cmd_nsis)
 
@@ -504,6 +569,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_pkg = sub.add_parser('package', help='Package app using PyInstaller')
     p_pkg.add_argument('script', nargs='?', help='Python entrypoint to package (default: app.py)')
     p_pkg.add_argument('--name', help='Output executable name')
+    p_pkg.add_argument('--icon', help='Path to app icon (.ico)')
     p_pkg.add_argument('--noconsole', action='store_true', help='Hide console window')
     p_pkg.add_argument('--add-data', nargs='*', help='Additional data to include (format: src;dest)')
     p_pkg.add_argument('--installer', action='store_true', help='Build NSIS installer after packaging')

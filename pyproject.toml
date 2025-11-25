@@ -27,4 +27,4 @@ classifiers = [
 pytron = "pytron.cli:main"
 
 [tool.setuptools.package-data]
-pytron = ["installer/*.nsi", "nsis-setup.exe"]
+pytron = ["installer/*.nsi", "installer/*.ico", "installer/*.bmp", "nsis-setup.exe"]

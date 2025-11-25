@@ -1,3 +1,5 @@
+# Banner: pytron.png
+![Pytron](/pytron/pytron.png)
 # Pytron Client
 
 A compact client module that provides a clean, actionable API for controlling application windows and calling backend methods from the frontend.
