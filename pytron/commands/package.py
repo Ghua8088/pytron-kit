@@ -100,14 +100,14 @@ def build_installer(out_name: str, script_dir: Path, app_icon: str | None) -> in
         f"/DOUT_DIR={script_dir.resolve()}",
     ]
     
+    
     # Pass icon to NSIS if available
     if app_icon:
         abs_icon = Path(app_icon).resolve()
         cmd_nsis.append(f'/DMUI_ICON={abs_icon}')
-        cmd_nsis.append(f'/DMUI_UNICON={abs_icon}')
-        
+        cmd_nsis.append(f'/DMUI_UNICON={abs_icon}')    
     cmd_nsis.append(str(nsi_script))
-    
+    cmd_nsis.append(f'/V4')
     print(f"Running NSIS: {' '.join(cmd_nsis)}")
     return subprocess.call(cmd_nsis)
 
@@ -228,39 +228,33 @@ def cmd_package(args: argparse.Namespace) -> int:
     pytron_icon = package_dir / 'installer' / 'pytron.ico'
     if not app_icon and pytron_icon.exists():
         app_icon = str(pytron_icon)
+    # Runtime hooks shipped with the pytron package (e.g. our UTF-8/stdio hook)
+    # `package_dir` points to the pytron package root (one level above the 'pytron' package dir)
+    path_to_pytron_hooks = str(Path(package_dir) )
 
-    cmd = [
-        sys.executable, '-m', 'PyInstaller', 
-        '--onedir', 
-        '--hidden-import=pytron',
-        '--paths', str(package_dir),
-        '--name', out_name, 
-        str(script)
-    ]
-    
-    if app_icon:
-        cmd.extend(['--icon', app_icon])
-        print(f"[Pytron] Using icon: {app_icon}")
+    # Manifest support: prefer passing a manifest on the PyInstaller CLI
+    manifest_path = None
+    possible_manifest = Path(package_dir)/'pytron' / 'manifests' / 'windows-utf8.manifest'
+    print(possible_manifest)
+    if possible_manifest.exists():
+        print("Manif")
+        manifest_path = possible_manifest.resolve()
+        print(f"[Pytron] Found Windows UTF-8 manifest: {manifest_path}")
 
-    cmd.append('--noconsole')
-
-    # Auto-detect and include assets
+    # Auto-detect and include assets (settings.json + frontend build)
     add_data = []
     if args.add_data:
         add_data.extend(args.add_data)
 
     script_dir = script.parent
-    
+
     # 1. settings.json
     settings_path = script_dir / 'settings.json'
     if settings_path.exists():
-        # Format: source;dest (Windows) or source:dest (Unix)
-        # We want settings.json to be at the root of the bundle
         add_data.append(f"{settings_path}{os.pathsep}.")
         print(f"[Pytron] Auto-including settings.json")
 
     # 2. Frontend assets
-    # Check for frontend/dist or frontend/build
     frontend_dist = None
     possible_dists = [
         script_dir / 'frontend' / 'dist',
@@ -270,26 +264,56 @@ def cmd_package(args: argparse.Namespace) -> int:
         if d.exists() and d.is_dir():
             frontend_dist = d
             break
-            
+
     if frontend_dist:
-        # We want the *contents* of dist to be in a folder named 'frontend/dist' or similar?
-        # Usually settings.json points to "frontend/dist/index.html"
-        # So we should preserve the structure "frontend/dist" inside the bundle.
-        # PyInstaller add-data "src;dest" puts src INSIDE dest.
-        # So "frontend/dist;frontend/dist"
-        
-        # Let's verify the relative path from script
         rel_path = frontend_dist.relative_to(script_dir)
         add_data.append(f"{frontend_dist}{os.pathsep}{rel_path}")
         print(f"[Pytron] Auto-including frontend assets from {rel_path}")
 
-    for item in add_data:
-        cmd.extend(['--add-data', item])
+    # --------------------------------------------------
+    # Create a .spec file with the UTF-8 bootloader option
+    # --------------------------------------------------
+    try:
+        print("[Pytron] Generating spec file with UTF-8 Bootloader option...")
 
-    print(f"Packaging with: {' '.join(cmd)}")
-    ret_code = subprocess.call(cmd)
-    if ret_code != 0:
-        return ret_code
+        makespec_cmd = [
+            sys.executable, '-m', 'PyInstaller.utils.cliutils.makespec',
+            '--name', out_name,
+            '--onedir',
+            '--noconsole',
+            '--hidden-import=pytron',
+            f'--runtime-hook={package_dir}/pytron/utf8_hook.py',
+            str(script)
+        ]
+        # Pass manifest to makespec so spec may include it (deprecated shorthand supported by some PyInstaller versions)
+        if manifest_path:
+            makespec_cmd.append(f'--manifest={manifest_path}')
+
+        if app_icon:
+            makespec_cmd.extend(['--icon', app_icon])
+            print(f"[Pytron] Using icon: {app_icon}")
+
+        for item in add_data:
+            makespec_cmd.extend(['--add-data', item])
+
+        print(f"[Pytron] Running makespec: {' '.join(makespec_cmd)}")
+        subprocess.run(makespec_cmd, check=True)
+
+        spec_file = Path(f"{out_name}.spec")
+        if not spec_file.exists():
+            print(f"[Pytron] Error: expected spec file {spec_file} not found after makespec.")
+            return 1
+
+        # Build from the generated spec. Do not attempt to inject or pass CLI-only
+        # makespec options here; makespec was already called with the manifest/runtime-hook.
+        build_cmd = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', str(spec_file)]
+        print(f"[Pytron] Building from Spec: {' '.join(build_cmd)}")
+        ret_code = subprocess.call(build_cmd)
+        if ret_code != 0:
+            return ret_code
+    except subprocess.CalledProcessError as e:
+        print(f"[Pytron] Error generating spec or building: {e}")
+        return 1
 
     if args.installer:
         return build_installer(out_name, script.parent, app_icon)

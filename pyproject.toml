@@ -1,7 +1,8 @@
 [build-system]
 requires = ["setuptools>=65.5.1", "wheel"]
 build-backend = "setuptools.build_meta"
-
+[tool.setuptools]
+packages = ["pytron"]
 [project]
 name = "pytron-kit"
 version = "0.1.6"
@@ -17,7 +18,10 @@ dependencies = [
   "pywebview",
   "pyinstaller",
   "watchgod",
-  "pydantic"
+  "pydantic",
+  "brotli",   
+  "brotlicffi",  
+  "Pillow"
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
@@ -29,4 +33,4 @@ classifiers = [
 pytron = "pytron.cli:main"
 
 [tool.setuptools.package-data]
-pytron = ["installer/*.nsi", "installer/*.ico", "installer/*.bmp", "nsis-setup.exe"]
+pytron = ["installer/*.nsi", "installer/*.ico", "installer/*.bmp", "nsis-setup.exe","utf8_hook.py", "manifests/*"]

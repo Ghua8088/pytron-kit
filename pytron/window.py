@@ -36,6 +36,8 @@ class Window:
         self._window = None
         self._exposed_functions = {}
         self.shortcuts = {}
+        # Reference to parent App (set by App when window is registered)
+        self._app_ref = None
 
     def shortcut(self, key_combo, func=None):
         """
@@ -102,7 +104,31 @@ class Window:
             
     def destroy(self):
         if self._window:
-            self._window.destroy()
+            try:
+                self._window.destroy()
+            except Exception:
+                pass
+            # Clear the underlying webview window reference
+            self._window = None
+        # Remove from parent App window list if present
+        if getattr(self, '_app_ref', None):
+            try:
+                if hasattr(self._app_ref, 'remove_window'):
+                    try:
+                        self._app_ref.remove_window(self)
+                    except Exception:
+                        # Fallback to direct list removal
+                        try:
+                            self._app_ref.windows.remove(self)
+                        except Exception:
+                            pass
+                else:
+                    try:
+                        self._app_ref.windows.remove(self)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             
     @property
     def on_top(self):
@@ -129,8 +155,14 @@ class Window:
         if self._window:
             # We use a safe serialization
             try:
+                # Serialize the payload using our encoder
                 payload = json.dumps(data, cls=PytronJSONEncoder)
-                self._window.evaluate_js(f"window.__pytron_dispatch('{event}', {payload})")
+
+                # Serialize the call arguments (event name and payload string)
+                call_args = json.dumps([event, payload])
+
+                # Use spread operator to safely pass arguments into JS
+                self._window.evaluate_js(f"window.__pytron_dispatch(...{call_args})")
             except Exception as e:
                 print(f"[Pytron] Failed to emit event '{event}': {e}")
 
@@ -140,10 +172,13 @@ class Window:
         
         # Helper wrapper to ensure serialization
         def create_wrapper(func):
-            def wrapper(self, *args, _func=func, **kwargs):
+            # The wrapper will be attached as a method on the dynamic API class.
+            # pywebview will call it as a bound method, so the first argument
+            # will be the api instance. We must accept that parameter but not
+            # forward it to the underlying function `func`.
+            def wrapper(api_self, *args, _func=func, **kwargs):
                 result = _func(*args, **kwargs)
-                # We must serialize complex types (Pydantic, Image, datetime, etc) to dict/str 
-                # before returning because pywebview uses simple json.dumps
+                # Serialize complex types to simple JSON-able structures
                 return pytron_serialize(result)
             return wrapper
 
