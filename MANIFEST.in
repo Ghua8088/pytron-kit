@@ -1,0 +1,6 @@
+recursive-include pytron *.py
+recursive-include pytron *.json
+recursive-include pytron *.ico
+recursive-include pytron *.manifest
+recursive-include pytron *.nsi
+include pytron/nsis-setup.exe

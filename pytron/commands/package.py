@@ -5,6 +5,7 @@ import subprocess
 import json
 import os
 from pathlib import Path
+from .harvest import generate_nuclear_hooks
 
 def find_makensis() -> str | None:
     path = shutil.which('makensis')
@@ -106,8 +107,10 @@ def build_installer(out_name: str, script_dir: Path, app_icon: str | None) -> in
         abs_icon = Path(app_icon).resolve()
         cmd_nsis.append(f'/DMUI_ICON={abs_icon}')
         cmd_nsis.append(f'/DMUI_UNICON={abs_icon}')    
-    cmd_nsis.append(str(nsi_script))
+    # NSIS expects switches (like /V4) before the script filename; place verbosity
+    # flag before the script so it's honored.
     cmd_nsis.append(f'/V4')
+    cmd_nsis.append(str(nsi_script))
     print(f"Running NSIS: {' '.join(cmd_nsis)}")
     return subprocess.call(cmd_nsis)
 
@@ -127,13 +130,38 @@ def cmd_package(args: argparse.Namespace) -> int:
         print(f"[Pytron] Packaging using spec file: {script}")
         # When using a spec file, most other arguments are ignored by PyInstaller
         # as the spec file contains the configuration.
-        cmd = [sys.executable, '-m', 'PyInstaller', str(script)]
-        
-        # We can still pass --noconfirm to overwrite dist/build without asking
+        # Prepare and optionally generate hooks from the current venv so PyInstaller
+        # includes missing dynamic imports/binaries. Only generate hooks if user
+        # requested via CLI flags (`--collect-all` or `--force-hooks`).
+        temp_hooks_dir = None
+        try:
+            if getattr(args, 'collect_all', False):
+                temp_hooks_dir = script.parent / 'build' / 'nuclear_hooks'
+                generate_nuclear_hooks(temp_hooks_dir, collect_all_mode=True)
+            elif getattr(args, 'force_hooks', False):
+                temp_hooks_dir = script.parent / 'build' / 'nuclear_hooks'
+                generate_nuclear_hooks(temp_hooks_dir, collect_all_mode=False)
+        except Exception as e:
+            print(f"[Pytron] Warning: failed to generate nuclear hooks: {e}")
+
+        cmd = [sys.executable, '-m', 'PyInstaller']
+        cmd.append(str(script))
         cmd.append('--noconfirm')
-        
+
         print(f"Running: {' '.join(cmd)}")
         ret_code = subprocess.call(cmd)
+        env = None
+        if temp_hooks_dir is not None:
+            env = os.environ.copy()
+            old = env.get('PYTHONPATH', '')
+            new = str(temp_hooks_dir.resolve())
+            env['PYTHONPATH'] = new + (os.pathsep + old if old else '')
+
+        print(f"Running: {' '.join(cmd)}")
+        if env is not None:
+            ret_code = subprocess.call(cmd, env=env)
+        else:
+            ret_code = subprocess.call(cmd)
         
         # If installer was requested, we still try to build it
         if ret_code == 0 and args.installer:
@@ -303,12 +331,37 @@ def cmd_package(args: argparse.Namespace) -> int:
         if not spec_file.exists():
             print(f"[Pytron] Error: expected spec file {spec_file} not found after makespec.")
             return 1
-
         # Build from the generated spec. Do not attempt to inject or pass CLI-only
         # makespec options here; makespec was already called with the manifest/runtime-hook.
+
+        # Generate nuclear hooks only when user requested them. Defaults to NO hooks.
+        temp_hooks_dir = None
+        try:
+            if getattr(args, 'collect_all', False):
+                temp_hooks_dir = script.parent / 'build' / 'nuclear_hooks'
+                generate_nuclear_hooks(temp_hooks_dir, collect_all_mode=True)
+            elif getattr(args, 'force_hooks', False):
+                temp_hooks_dir = script.parent / 'build' / 'nuclear_hooks'
+                generate_nuclear_hooks(temp_hooks_dir, collect_all_mode=False)
+        except Exception as e:
+            print(f"[Pytron] Warning: failed to generate nuclear hooks: {e}")
+
         build_cmd = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', str(spec_file)]
-        print(f"[Pytron] Building from Spec: {' '.join(build_cmd)}")
-        ret_code = subprocess.call(build_cmd)
+
+        # If hooks were generated, add the hooks dir to PYTHONPATH for this subprocess
+        env = None
+        if temp_hooks_dir is not None:
+            env = os.environ.copy()
+            old = env.get('PYTHONPATH', '')
+            new = str(temp_hooks_dir.resolve())
+            env['PYTHONPATH'] = new + (os.pathsep + old if old else '')
+
+        if env is not None:
+            print(f"[Pytron] Building from Spec with hooks via PYTHONPATH: {' '.join(build_cmd)}")
+            ret_code = subprocess.call(build_cmd, env=env)
+        else:
+            print(f"[Pytron] Building from Spec: {' '.join(build_cmd)}")
+            ret_code = subprocess.call(build_cmd)
         if ret_code != 0:
             return ret_code
     except subprocess.CalledProcessError as e:
