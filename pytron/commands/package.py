@@ -20,8 +20,8 @@ def find_makensis() -> str | None:
             return p
     return None
 
-def build_installer(out_name: str, script_dir: Path, app_icon: str | None) -> int:
-    print("[Pytron] Building installer...")
+def build_windows_installer(out_name: str, script_dir: Path, app_icon: str | None) -> int:
+    print("[Pytron] Building Windows installer (NSIS)...")
     makensis = find_makensis()
     if not makensis:
         print("[Pytron] NSIS (makensis) not found.")
@@ -114,6 +114,103 @@ def build_installer(out_name: str, script_dir: Path, app_icon: str | None) -> in
     print(f"Running NSIS: {' '.join(cmd_nsis)}")
     return subprocess.call(cmd_nsis)
 
+def build_mac_installer(out_name: str, script_dir: Path, app_icon: str | None) -> int:
+    print("[Pytron] Building macOS installer (DMG)...")
+    
+    # Check for dmgbuild
+    if not shutil.which('dmgbuild'):
+        print("[Pytron] 'dmgbuild' not found. Attempting to install it...")
+        try:
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'dmgbuild'])
+            print("[Pytron] 'dmgbuild' installed successfully.")
+        except subprocess.CalledProcessError:
+            print("[Pytron] Failed to install 'dmgbuild'. Please install it manually: pip install dmgbuild")
+            print("[Pytron] Skipping DMG creation. Your .app bundle is in dist/")
+            return 0
+
+    app_bundle = Path('dist') / f"{out_name}.app"
+    if not app_bundle.exists():
+        print(f"[Pytron] Error: .app bundle not found at {app_bundle}")
+        return 1
+
+    dmg_name = f"{out_name}.dmg"
+    dmg_path = Path('dist') / dmg_name
+    
+    # Generate settings file for dmgbuild
+    settings_file = Path('build') / 'dmg_settings.py'
+    settings_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(settings_file, 'w') as f:
+        f.write(f"files = [r'{str(app_bundle)}']\n")
+        f.write("symlinks = {'Applications': '/Applications'}\n")
+        if app_icon and Path(app_icon).suffix == '.icns':
+             f.write(f"icon = r'{app_icon}'\n")
+        f.write(f"badge_icon = r'{app_icon}'\n")
+    
+    cmd = ['dmgbuild', '-s', str(settings_file), out_name, str(dmg_path)]
+    print(f"Running: {' '.join(cmd)}")
+    return subprocess.call(cmd)
+
+def build_installer(out_name: str, script_dir: Path, app_icon: str | None) -> int:
+    if sys.platform == 'win32':
+        return build_windows_installer(out_name, script_dir, app_icon)
+    elif sys.platform == 'darwin':
+        return build_mac_installer(out_name, script_dir, app_icon)
+    else:
+        print(f"[Pytron] Installer creation not supported on {sys.platform} yet.")
+        return 0
+
+
+
+def cleanup_dist(dist_path: Path):
+    """
+    Removes unnecessary files (node_modules, node.exe, etc) from the build output
+    to optimize the package size.
+    """
+    target_path = dist_path
+    # On macOS, if we built a bundle, the output is .app
+    if sys.platform == 'darwin':
+        app_path = dist_path.parent / f"{dist_path.name}.app"
+        if app_path.exists():
+            target_path = app_path
+
+    if not target_path.exists():
+        return
+
+    # Items to remove (names)
+    remove_names = {
+        'node_modules', 'node.exe', 'npm.cmd', 'npx.cmd', 
+        '.git', '.gitignore', '.vscode', '.idea',
+        'package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
+        '__pycache__', '.env', 'venv', '.venv', 'env'
+    }
+
+    print(f"[Pytron] Optimizing build directory: {dist_path}")
+    
+    # Walk top-down so we can modify dirs in-place to skip traversing removed dirs
+    for root, dirs, files in os.walk(dist_path, topdown=True):
+        # Remove directories
+        # Modify dirs in-place to avoid traversing into removed directories
+        dirs_to_remove = [d for d in dirs if d in remove_names]
+        for d in dirs_to_remove:
+            full_path = Path(root) / d
+            try:
+                shutil.rmtree(full_path)
+                print(f"  - Removed directory: {d}")
+                dirs.remove(d)
+            except Exception as e:
+                print(f"  ! Failed to remove {d}: {e}")
+
+        # Remove files
+        for f in files:
+            if f in remove_names or f.endswith('.pdb'): # Also remove debug symbols if any
+                full_path = Path(root) / f
+                try:
+                    os.remove(full_path)
+                    print(f"  - Removed file: {f}")
+                except Exception as e:
+                    print(f"  ! Failed to remove {f}: {e}")
+
 
 def cmd_package(args: argparse.Namespace) -> int:
     script_path = args.script
@@ -163,6 +260,11 @@ def cmd_package(args: argparse.Namespace) -> int:
         else:
             ret_code = subprocess.call(cmd)
         
+        # Cleanup
+        if ret_code == 0:
+             out_name = args.name or script.stem
+             cleanup_dist(Path('dist') / out_name)
+
         # If installer was requested, we still try to build it
         if ret_code == 0 and args.installer:
             # We need to deduce the name from the spec file or args
@@ -302,7 +404,7 @@ def cmd_package(args: argparse.Namespace) -> int:
     # Create a .spec file with the UTF-8 bootloader option
     # --------------------------------------------------
     try:
-        print("[Pytron] Generating spec file with UTF-8 Bootloader option...")
+        print("[Pytron] Generating spec file...")
 
         makespec_cmd = [
             sys.executable, '-m', 'PyInstaller.utils.cliutils.makespec',
@@ -310,12 +412,15 @@ def cmd_package(args: argparse.Namespace) -> int:
             '--onedir',
             '--noconsole',
             '--hidden-import=pytron',
-            f'--runtime-hook={package_dir}/pytron/utf8_hook.py',
             str(script)
         ]
-        # Pass manifest to makespec so spec may include it (deprecated shorthand supported by some PyInstaller versions)
-        if manifest_path:
-            makespec_cmd.append(f'--manifest={manifest_path}')
+        
+        # Windows-specific options
+        if sys.platform == 'win32':
+             makespec_cmd.append(f'--runtime-hook={package_dir}/pytron/utf8_hook.py')
+             # Pass manifest to makespec so spec may include it (deprecated shorthand supported by some PyInstaller versions)
+             if manifest_path:
+                makespec_cmd.append(f'--manifest={manifest_path}')
 
         if app_icon:
             makespec_cmd.extend(['--icon', app_icon])
@@ -364,6 +469,10 @@ def cmd_package(args: argparse.Namespace) -> int:
             ret_code = subprocess.call(build_cmd)
         if ret_code != 0:
             return ret_code
+
+        # Cleanup
+        cleanup_dist(Path('dist') / out_name)
+
     except subprocess.CalledProcessError as e:
         print(f"[Pytron] Error generating spec or building: {e}")
         return 1

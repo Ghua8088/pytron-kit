@@ -129,7 +129,7 @@ class App:
 
         # pywebview.start() is a blocking call that runs the GUI loop
         # Menu is passed to start() in pywebview
-        webview.start(debug=debug, menu=menu, **kwargs)
+        webview.start(debug=debug, menu=menu,http_server=False, **kwargs)
         self.is_running = False
 
     def quit(self):
