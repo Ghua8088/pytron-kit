@@ -270,8 +270,6 @@ class Window:
         
         # Default to provided url
         target_url = self.url
-        use_http_server = True
-
         if os.path.exists(dist_path):
             real_path = os.path.abspath(dist_path)
             # 2. Use file:// protocol
@@ -292,7 +290,6 @@ class Window:
             hidden=self.hidden,
             frameless=self.frameless,
             easy_drag=self.easy_drag,
-            http_server=use_http_server
         )
         
         # Bind events
