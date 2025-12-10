@@ -10,7 +10,6 @@ TEMPLATE_APP = '''from pytron import App
 
 def main():
     app = App()
-    window = app.create_window()
     app.run()
 
 if __name__ == '__main__':
@@ -39,11 +38,8 @@ def cmd_init(args: argparse.Namespace) -> int:
         "title": target.name,
         "pytron_version": __version__,
         "frontend_framework": args.template,
-        "width": 800,
-        "height": 600,
-        "resizable": True,
+        "dimensions":[800, 600],
         "frameless": False,
-        "easy_drag": True,
         "url": dist_path
     }
     settings_file.write_text(json.dumps(settings_data, indent=4))
