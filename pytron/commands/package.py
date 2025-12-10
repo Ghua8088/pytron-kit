@@ -8,6 +8,50 @@ from pathlib import Path
 from .harvest import generate_nuclear_hooks
 from .helpers import get_python_executable, get_venv_site_packages
 
+
+def get_smart_assets(script_dir: Path, frontend_dist: Path | None = None):
+    """Recursively collect project assets to include with PyInstaller.
+
+    - Skips known unwanted directories (venv, node_modules, .git, build, dist, etc.)
+    - Skips files with Python/source extensions and common dev files
+    - Prunes traversal to avoid descending into excluded folders
+    - Skips frontend folder since it's handled separately
+    Returns a list of strings in the "abs_path{os.pathsep}rel_path" format
+    expected by PyInstaller's `--add-data`.
+    """
+    add_data = []
+    EXCLUDE_DIRS = {
+        'venv', '.venv', 'env', '.env',
+        'node_modules', '.git', '.vscode', '.idea',
+        'build', 'dist', '__pycache__', 'site',
+        '.pytest_cache', 'installer', 'frontend'
+    }
+    EXCLUDE_SUFFIXES = {'.py', '.pyc', '.pyo', '.spec', '.md', '.map'}
+    EXCLUDE_FILES = {'.gitignore', 'package-lock.json', 'npm-debug.log', '.DS_Store', 'thumbs.db', 'settings.json'}
+
+    root_path = str(script_dir)
+    for root, dirs, files in os.walk(root_path):
+        # Prune directories we never want to enter
+        dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS and not d.startswith('.')]
+
+        # If this path is part of frontend, skip (we handle frontend separately)
+        if frontend_dist and str(frontend_dist) in root:
+            continue
+
+        for filename in files:
+            if filename in EXCLUDE_FILES:
+                continue
+            file_path = os.path.join(root, filename)
+            _, ext = os.path.splitext(filename)
+            if ext.lower() in EXCLUDE_SUFFIXES:
+                continue
+
+            rel_path = os.path.relpath(file_path, root_path)
+            add_data.append(f"{file_path}{os.pathsep}{rel_path}")
+            print(f"[Pytron] Auto-including asset: {rel_path}")
+
+    return add_data
+
 def find_makensis() -> str | None:
     path = shutil.which('makensis')
     if path:
@@ -404,18 +448,34 @@ def cmd_package(args: argparse.Namespace) -> int:
         add_data.append(f"{frontend_dist}{os.pathsep}{rel_path}")
         print(f"[Pytron] Auto-including frontend assets from {rel_path}")
 
+    # 3. Auto-include non-Python files and directories at the project root
+    #    Only if --smart-assets is provided
+    if getattr(args, 'smart_assets', False):
+        try:
+            smart_assets = get_smart_assets(script_dir, frontend_dist=frontend_dist)
+            if smart_assets:
+                add_data.extend(smart_assets)
+        except Exception as e:
+            print(f"[Pytron] Warning: failed to auto-include project assets: {e}")
+
     # --------------------------------------------------
     # Create a .spec file with the UTF-8 bootloader option
     # --------------------------------------------------
     try:
         print("[Pytron] Generating spec file...")
+        dll_name = "webview.dll" 
+        if sys.platform == "darwin": dll_name = "libwebview_x64.dylib" # or arm64
+        if sys.platform == "linux": dll_name = "libwebview.so"
 
+        dll_src = os.path.join(package_dir, "pytron", "dependancies", dll_name)
+        dll_dest = os.path.join("pytron", "dependancies")
         makespec_cmd = [
             get_python_executable(), '-m', 'PyInstaller.utils.cliutils.makespec',
             '--name', out_name,
             '--onedir',
             '--noconsole',
             '--hidden-import=pytron',
+            f'--add-binary={dll_src}{os.pathsep}{dll_dest}',
             str(script)
         ]
         

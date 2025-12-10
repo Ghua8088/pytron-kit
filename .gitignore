@@ -1,17 +1,3 @@
-# Ignore build and dist folders
-build
-dist
-*.node_modules
-# Ignore virtual environment
-venv
-*.spec
-# Ignore IDE files
-.idea
-.vscode
-*.pyc
-# Ignore Python cache
 __pycache__
-*.egg-info
-/docs
-mkdocs.yml
-/site
+/build/
+/*.egg-info/

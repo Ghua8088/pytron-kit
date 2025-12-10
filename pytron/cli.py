@@ -47,6 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_pkg.add_argument('--installer', action='store_true', help='Build NSIS installer after packaging')
     p_pkg.add_argument('--collect-all', action='store_true', help='Generate full "collect_all" hooks (larger builds).')
     p_pkg.add_argument('--force-hooks', action='store_true', help='Force generation of hooks using collect_submodules (smaller hooks).')
+    p_pkg.add_argument('--smart-assets', action='store_true', help='Enable auto-inclusion of smart assets (non-code files).')
     p_pkg.set_defaults(func=cmd_package)
 
     p_build = sub.add_parser('build-frontend', help='Run npm build in a frontend folder')

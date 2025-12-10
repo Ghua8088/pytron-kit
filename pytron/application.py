@@ -1,18 +1,17 @@
 import os
 import sys
 import json
-import webview
 import inspect
 import typing
 from .utils import get_resource_path
 from .state import ReactiveState
-from .window import Window
-from .system import SystemAPI
+from .webview import Webview
+
 from .serializer import pydantic
 
 class App:
     def __init__(self, config_file='settings.json'):
-        self.windows = []
+        self.windows = None
         self.is_running = False
         self.config = {}
         self._exposed_functions = {} # Global functions for all windows
@@ -34,8 +33,6 @@ class App:
                 import json
                 with open(path, 'r') as f:
                     self.config = json.load(f)
-                # print(f"[Pytron] Loaded settings from {path}")
-
                 # Check version compatibility
                 config_version = self.config.get('pytron_version')
                 if config_version:
@@ -47,67 +44,8 @@ class App:
                         pass
             except Exception as e:
                 print(f"[Pytron] Failed to load settings: {e}")
-
-    def create_window(self, title=None, url=None, html=None, js_api=None, width=None, height=None, **kwargs):
-        # Merge config with arguments. Arguments take precedence.
-        
-        # Helper to get value from arg, then config, then default
-        def get_val(arg, key, default):
-            if arg is not None:
-                return arg
-            return self.config.get(key, default)
-
-        # Resolve URL
-        final_url = url
-        if final_url is None:
-            final_url = self.config.get('url')
-            # If we got a URL from config, check if it needs path resolution
-            if final_url and not final_url.startswith('http') and not final_url.startswith('file://'):
-                final_url = get_resource_path(final_url)
-                if not os.path.exists(final_url):
-                    # Fallback check relative to cwd
-                    cwd_path = os.path.abspath(self.config.get('url'))
-                    if os.path.exists(cwd_path):
-                        final_url = cwd_path
-
-        # Construct window with resolved values
-        # Note: We pass defaults here that match the original Window.__init__ defaults if not in config
-        window = Window(
-            title=get_val(title, 'title', 'Pytron App'),
-            url=final_url,
-            html=get_val(html, 'html', None),
-            js_api=js_api,
-            width=get_val(width, 'width', 800),
-            height=get_val(height, 'height', 600),
-            resizable=get_val(kwargs.get('resizable'), 'resizable', True),
-            fullscreen=get_val(kwargs.get('fullscreen'), 'fullscreen', False),
-            min_size=get_val(kwargs.get('min_size'), 'min_size', (200, 100)),
-            hidden=get_val(kwargs.get('hidden'), 'hidden', False),
-            frameless=get_val(kwargs.get('frameless'), 'frameless', False),
-            easy_drag=get_val(kwargs.get('easy_drag'), 'easy_drag', True),
-            **{k: v for k, v in kwargs.items() if k not in ['resizable', 'fullscreen', 'min_size', 'hidden', 'frameless', 'easy_drag']}
-        )
-        # Link app reference to window so it can access global exposed functions
-        window._app_ref = self
-        
-        self.windows.append(window)
-        
-        # If the app is already running, create the window immediately.
-        # Otherwise, wait until run() is called to allow for configuration (e.g. expose).
-        if self.is_running:
-            window.create()
-            
-        return window
-
-    def run(self, debug=False, menu=None, **kwargs):
+    def run(self, **kwargs):
         self.is_running = True
-        # Create any pending windows
-        for window in self.windows:
-            if window._window is None:
-                window.create()
-        
-        # Ensure we have a writable storage_path for WebView2 cache
-        # Default behavior tries to write to executable dir, which fails in Program Files
         if 'storage_path' not in kwargs:
             title = self.config.get('title', 'Pytron App')
             # Sanitize title for folder name
@@ -117,25 +55,55 @@ class App:
                 base_path = os.environ.get('LOCALAPPDATA', os.path.expanduser('~'))
             else:
                 base_path = os.path.expanduser('~/.config')
-                
-            storage_path = os.path.join(base_path, safe_title)
+            
+            # If in debug mode, use a unique path to allow multiple instances
+            if self.config.get('debug', False):
+                storage_path = os.path.join(base_path, f"{safe_title}_Dev_{os.getpid()}")
+            else:
+                storage_path = os.path.join(base_path, safe_title)
+
             kwargs['storage_path'] = storage_path
             
-            # Ensure directory exists (pywebview might do this, but good to be safe)
             try:
                 os.makedirs(storage_path, exist_ok=True)
             except Exception:
-                pass # Let pywebview handle or fail if it can't write
+                pass
+        
+        # Set WebView2 User Data Folder to avoid writing to exe dir
+        if sys.platform == 'win32' and 'storage_path' in kwargs:
+             os.environ["WEBVIEW2_USER_DATA_FOLDER"] = kwargs['storage_path']
 
-        # pywebview.start() is a blocking call that runs the GUI loop
-        # Menu is passed to start() in pywebview
-        webview.start(debug=debug, menu=menu, http_server=False,**kwargs)
+        # Create the main window and keep windows as a list so ReactiveState
+        # can iterate over all windows uniformly.
+        window = Webview(config=self.config)
+        self.windows = [window]
+
+        # Bind exposed functions to the new window
+        for name, func in self._exposed_functions.items():
+            if isinstance(func, type):
+                try:
+                    window.expose(func)
+                except Exception:
+                    # Fallback: bind the class itself as a callable
+                    window.bind(name, func)
+            else:
+                window.bind(name, func)
+
+        window.start()
         self.is_running = False
-
+        
+        # Cleanup dev storage if needed
+        if self.config.get('debug', False) and 'storage_path' in kwargs:
+             path = kwargs['storage_path']
+             if os.path.isdir(path) and f"_Dev_{os.getpid()}" in path:
+                 try:
+                     import shutil
+                     shutil.rmtree(path, ignore_errors=True)
+                 except Exception:
+                     pass
     def quit(self):
         for window in self.windows:
-            window.destroy()
-
+            window.close()
     def _python_type_to_ts(self, py_type):
         if py_type == str: return "string"
         if py_type == int: return "number"
@@ -261,7 +229,35 @@ class App:
                 self.expose(f, name=name)
                 return f
             return decorator
-            
+        # If the user passed a class or an object (bridge), expose its public callables
+        if isinstance(func, type) or (not callable(func) and hasattr(func, '__dict__')):
+            # Try to instantiate the class if a class was provided, otherwise use the instance
+            bridge = None
+            if isinstance(func, type):
+                try:
+                    bridge = func()
+                except Exception:
+                    # Could not instantiate; fall back to using the class object itself
+                    bridge = func
+            else:
+                bridge = func
+
+            for attr_name in dir(bridge):
+                if attr_name.startswith('_'):
+                    continue
+                try:
+                    attr = getattr(bridge, attr_name)
+                except Exception:
+                    continue
+                if callable(attr):
+                    try:
+                        self._exposed_functions[attr_name] = attr
+                        self._exposed_ts_defs[attr_name] = self._get_ts_definition(attr_name, attr)
+                    except Exception:
+                        # Best-effort: ignore methods that can't be exposed
+                        pass
+            return func
+
         if name is None:
             name = func.__name__
         self._exposed_functions[name] = func
@@ -344,13 +340,6 @@ class App:
         for def_str in self._exposed_ts_defs.values():
             ts_lines.append(def_str)
 
-        # 2. Add SystemAPI methods
-        system_api = SystemAPI(None)
-        for attr_name in dir(system_api):
-            if not attr_name.startswith('_'):
-                attr = getattr(system_api, attr_name)
-                if callable(attr):
-                    ts_lines.append(self._get_ts_definition(attr_name, attr))
 
         # 3. Add Window methods
         # Map exposed name to Window class method name
@@ -363,12 +352,10 @@ class App:
             'resize': 'resize',
             'get_size': 'get_size',
         }
-        
         for exposed_name, method_name in win_map.items():
-            if hasattr(Window, method_name):
-                method = getattr(Window, method_name)
+            method = getattr(Webview, method_name, None)
+            if method:
                 ts_lines.append(self._get_ts_definition(exposed_name, method))
-
         # 4. Add dynamic methods that are not on Window class
         ts_lines.append("    trigger_shortcut(combo: string): Promise<boolean>;")
         ts_lines.append("    get_registered_shortcuts(): Promise<string[]>;")

@@ -3,8 +3,9 @@ import sys
 import shutil
 import subprocess
 import json
+
 from pathlib import Path
-from .helpers import locate_frontend_dir, run_frontend_build, get_python_executable
+from .helpers import locate_frontend_dir, run_frontend_build, get_python_executable, ensure_next_config
 
 try:
     from watchgod import watch, DefaultWatcher
@@ -47,6 +48,12 @@ def run_dev_mode(script: Path, extra_args: list[str]) -> int:
         if npm:
             # Check for watch script
             pkg_data = json.loads((frontend_dir / 'package.json').read_text())
+            # If this looks like a Next.js app, ensure a next.config.js suitable for static export
+            try:
+                if 'next' in pkg_data.get('dependencies', {}) or 'next' in pkg_data.get('devDependencies', {}):
+                    ensure_next_config(frontend_dir)
+            except Exception:
+                pass
             args = ['run', 'build']
             
             if 'watch' in pkg_data.get('scripts', {}):
