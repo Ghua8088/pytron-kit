@@ -15,6 +15,7 @@ keywords = ["electron", "app", "desktop"]
 authors = [
   { name = "Ghua8088" }
 ]
+dependencies = [
   "watchgod",
   "pydantic",
   "importlib",
