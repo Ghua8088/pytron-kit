@@ -4,4 +4,4 @@ watchgod
 pytest
 pyobjc-framework-Cocoa; sys_platform == 'darwin'
 pyobjc-framework-WebKit; sys_platform == 'darwin'
-PyGObject; sys_platform == 'linux'
+PyGObject<3.53.0; sys_platform == 'linux'
