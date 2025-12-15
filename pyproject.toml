@@ -6,7 +6,7 @@ packages = ["pytron"]
 
 [project]
 name = "pytron-kit"
-version = "0.2.4"
+version = "0.2.5"
 description = "An Electron-like library for Python "
 readme = "README.md"
 requires-python = ">=3.6"
