@@ -102,35 +102,36 @@ class LinuxImplementation(PlatformInterface):
         """
         Uses ctypes to call webkit_web_context_register_uri_scheme.
         """
+        if not self.gtk:
+            return
+
+        win_ptr = self._get_window(w)
+
         try:
-            # Load WebKit2GTK lib
-            # Try 4.1 first (Ubuntu 24.04), then 4.0
+            # Get the direct child of the GtkWindow (which is a GtkBin)
+            self.gtk.gtk_bin_get_child.argtypes = [ctypes.c_void_p]
+            self.gtk.gtk_bin_get_child.restype = ctypes.c_void_p
+
+            child = self.gtk.gtk_bin_get_child(win_ptr)
+            if not child:
+                print("[Pytron] Could not find child widget in GtkWindow.")
+                return
+
+            # Load WebKit2GTK lib (try 4.1 then 4.0)
             libwebkit = None
             try:
                 libwebkit = ctypes.CDLL("libwebkit2gtk-4.1.so.0")
             except OSError:
-                 try:
+                try:
                     libwebkit = ctypes.CDLL("libwebkit2gtk-4.0.so.37")
-                 except OSError:
+                except OSError:
                     print("[Pytron] Could not find libwebkit2gtk shared library.")
                     return
 
-            # Helper types
-            # GUserFunction: void (*GUserFunction) (void) - but depends on signal
-            
-            # We need to find the WebKitWebView from the GtkWindow (w)
-            # Window -> Bin -> Container ... traversal is hard in ctypes without symbols.
-            
-            # Get the direct child of the GtkWindow (which is a GtkBin)
-            child = gtk.gtk_bin_get_child(win_ptr)
-            if not child:
-                 print("[Pytron] Could not find child widget in GtkWindow.")
-                 return
-                 
-            # 1. Try to see if this direct child is the WebView
+            # Prepare WebKit functions
             libwebkit.webkit_web_view_get_settings.argtypes = [ctypes.c_void_p]
             libwebkit.webkit_web_view_get_settings.restype = ctypes.c_void_p
-            
+
             libwebkit.webkit_settings_set_allow_file_access_from_file_urls.argtypes = [ctypes.c_void_p, ctypes.c_int]
             libwebkit.webkit_settings_set_allow_universal_access_from_file_urls.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
@@ -141,12 +142,8 @@ class LinuxImplementation(PlatformInterface):
                 libwebkit.webkit_settings_set_allow_universal_access_from_file_urls(settings, 1)
                 return
 
-            # 2. If not, maybe it's a container/box? 
-            # Calling gtk_bin_get_child on a GtkBox (which is not a GtkBin) causes CRITICAL warnings.
-            # We skip deep traversal to avoid "Gtk-CRITICAL **: gtk_bin_get_child: assertion 'GTK_IS_BIN (bin)' failed"
-            # If the architecture changes (e.g. wrapper boxes), we might need GtkContainer iteration logic here.
-            print("[Pytron] Direct child was not a WebView, and deep traversal is disabled to prevent GTK warnings.")
-        
+            print("[Pytron] Direct child was not a WebView; deep traversal skipped to avoid GTK warnings.")
+
         except Exception as e:
             print(f"[Pytron] Error ensuring file access on Linux: {e}")
 
