@@ -243,6 +243,11 @@ Distribute your app as a standalone executable. Pytron automatically reads your 
     pytron package
     ```
 
+### Cross-Compilation (Build for Linux/macOS from Windows)
+PyInstaller doesn't support true cross-compilation. To build for other platforms, you have two options:
+1.  **CI/CD (Recommended)**: Run `pytron workflow init` to generate a GitHub Actions file. Push your code, and GitHub will build binaries for Windows, Ubuntu, and macOS automatically.
+2.  **Local (Linux only)**: Use **WSL** (Windows Subsystem for Linux) to run `pytron package` inside a Linux environment.
+
 ## CLI Reference
 
 *   `pytron init <name> [--template <name>]`: Create a new project.
@@ -253,6 +258,7 @@ Distribute your app as a standalone executable. Pytron automatically reads your 
 *   `pytron run [--dev]`: Run the application.
 *   `pytron show`: List installed Python packages and versions.
 *   `pytron package`: Build standalone executable.
+*   `pytron workflow init`: Generate GitHub Actions for multi-platform packaging (Windows/Linux/macOS).
 
 ---
 

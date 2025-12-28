@@ -78,13 +78,19 @@ class Webview:
         # Compatibility binding for UI components
         self.bind("get_registered_shortcuts", lambda: [], run_in_thread=False)
 
+        # Webview Error Reporting
+        self.bind("pytron_report_error", self._report_error, run_in_thread=False)
+        self.bind("pytron_log", lambda msg: self.logger.info(f"Webview Log: {msg}"), run_in_thread=False)
+
         init_js = """
-        
         console.log("[Pytron] Core Initialized");
         window.pytron = window.pytron || {};
         window.pytron.is_ready = true;
-        
         """
+        
+        # Disable default context menu if requested in config
+        if not config.get("default_context_menu", True):
+            init_js += "\nwindow.addEventListener('contextmenu', e => e.preventDefault());"
         
         # Init Only for Native
         if not self.is_pyside:
@@ -347,6 +353,21 @@ class Webview:
              c_func = BindCallback(_callback)
              self._bound_functions[name] = c_func
              lib.webview_bind(self.w, name.encode('utf-8'), c_func, None)
+
+    def _report_error(self, error_data):
+        """
+        Logs an error from the webview to the Python console.
+        """
+        msg = error_data.get("message", "Unknown error")
+        source = error_data.get("source", "unknown")
+        line = error_data.get("lineno", "?")
+        col = error_data.get("colno", "?")
+        stack = error_data.get("stack", "")
+        
+        err_msg = f"Webview Error: {msg} at {source}:{line}:{col}"
+        self.logger.error(err_msg)
+        if stack:
+            self.logger.error(f"Stack trace:\n{stack}")
     # -------------------------------------------------------------------
     # Safe event dispatch to JS
     # -------------------------------------------------------------------

@@ -134,9 +134,11 @@ class PySideEngine:
         self.channel.registerObject("pytron_internal", self.bridge)
         
         # Initialize Script to setup the JS side
-        init_script = """
-        window.pytron = window.pytron || {};
-        window.pytron._callbacks = {};
+        default_cm = "true" if config.get("default_context_menu", True) else "false"
+        init_script = f"""
+        window.pytron = window.pytron || {{}};
+        window.pytron._callbacks = {{}};
+        const config_default_context_menu = {default_cm};
 
         // Connect to QWebChannel
         new QWebChannel(qt.webChannelTransport, function(channel) {
@@ -148,6 +150,11 @@ class PySideEngine:
             // Re-emit generic ready event for convenience
             if (window.pytron.onReady) window.pytron.onReady();
         });
+
+        // Disable default context menu if requested in config
+        if (!config_default_context_menu) {
+            window.addEventListener('contextmenu', e => e.preventDefault());
+        }
 
         // Generic Caller
         window.pytron.invoke = function(name, args) {

@@ -42,6 +42,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         "frontend_framework": args.template,
         "dimensions":[800, 600],
         "frameless": False,
+        "default_context_menu": False,
         "url": dist_path,
         "author": "Your Name",
         "description": "A brief description of your app",

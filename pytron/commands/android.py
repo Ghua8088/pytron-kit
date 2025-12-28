@@ -523,6 +523,22 @@ def cmd_android(args):
                  with open(gradle_path, 'w') as f: f.writelines(new_lines)
                  console.print(f"             Updated Metadata: ID={app_id}, Ver={version}, Name={app_title}", style="dim")
 
+            # 7d. Update App Icon
+            app_icon_rel = config.get('icon')
+            if app_icon_rel:
+                app_icon_src = os.path.join(project_root, app_icon_rel)
+                if os.path.exists(app_icon_src):
+                    console.print(f"             Updating App Icon: {app_icon_rel}", style="dim")
+                    # Android template currently uses mipmap-xxhdpi
+                    mipmap_dir = os.path.join(target_android_dir, 'app', 'src', 'main', 'res', 'mipmap-xxhdpi')
+                    os.makedirs(mipmap_dir, exist_ok=True)
+                    
+                    # Copy to both standard and round icon names
+                    shutil.copy2(app_icon_src, os.path.join(mipmap_dir, 'ic_launcher.png'))
+                    shutil.copy2(app_icon_src, os.path.join(mipmap_dir, 'ic_launcher_round.png'))
+                else:
+                    console.print(f"             Warning: Icon file not found at {app_icon_src}", style="warning")
+
         except Exception as e:
             console.print(f"             Warning: Failed to inject metadata: {e}", style="warning")
 
@@ -574,12 +590,22 @@ def cmd_android(args):
     elif action == 'run':
         # Install and Launch
         log("Installing...", style="info")
-        run_command(['adb', 'install', '-r', 'android/app/build/outputs/apk/debug/app-debug.apk'], cwd=project_root)
+        # Find the APK - it might have a different name if we customized the build
+        apk_path = os.path.join(target_android_dir, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')
+        run_command(['adb', 'install', '-r', apk_path], cwd=project_root)
         
         log("Launching...", style="info")
-        # Package name is currently hardcoded in the shell template: com.pytron.android
-        # In a real tool we would parse it.
-        run_command(['adb', 'shell', 'am', 'start', '-n', 'com.pytron.android/.MainActivity'])
+        # Dynamically determine Package Name from build.gradle
+        pkg_name = "com.pytron.android" # Fallback
+        gradle_path = os.path.join(target_android_dir, 'app', 'build.gradle')
+        if os.path.exists(gradle_path):
+            with open(gradle_path, 'r') as f:
+                for line in f:
+                    if 'applicationId' in line:
+                        pkg_name = line.split('"')[1]
+                        break
+        
+        run_command(['adb', 'shell', 'am', 'start', '-n', f'{pkg_name}/com.pytron.android.MainActivity'])
         
         log("Starting Logcat...", style="info")
         run_command(['adb', 'logcat', '-v', 'time', '*:S', 'Pytron:V', 'PytronNative:V', 'PytronPython:V', 'AndroidRuntime:E', 'chromium:I'])

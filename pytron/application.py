@@ -99,6 +99,14 @@ class App:
         
         if sys.platform == 'win32':
             base_path = os.environ.get('LOCALAPPDATA', os.path.expanduser('~'))
+        elif os.environ.get('PYTHON_PLATFORM') == 'android':
+            # On Android, we must use the app's private files directory.
+            # The JNI bridge sets PYTHONHOME to filesDir/python
+            python_home = os.environ.get('PYTHONHOME')
+            if python_home:
+                base_path = os.path.dirname(python_home)
+            else:
+                base_path = os.path.expanduser('~')
         else:
             base_path = os.path.expanduser('~/.config')
         

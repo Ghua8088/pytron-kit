@@ -21,6 +21,7 @@ from .commands.show import cmd_show
 from .commands.frontend import cmd_frontend_install
 from .commands.android import cmd_android
 from .commands.doctor import cmd_doctor
+from .commands.workflow import cmd_workflow
 from .console import log, set_log_file
 
 
@@ -93,6 +94,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_android.add_argument('--native', action='store_true', help='Enable native extension cross-compilation (defaults to False)')
     p_android.add_argument('--aab', action='store_true', help='Build Android App Bundle (.aab) for Google Play Store')
     p_android.set_defaults(func=cmd_android)
+
+    p_workflow = sub.add_parser('workflow', help='CI/CD Workflow management', parents=[base_parser])
+    workflow_sub = p_workflow.add_subparsers(dest='workflow_command')
+    
+    pw_init = workflow_sub.add_parser('init', help='Initialize GitHub Actions for multi-platform packaging', parents=[base_parser])
+    pw_init.add_argument('--force', action='store_true', help='Overwrite existing workflow file')
+    pw_init.set_defaults(func=cmd_workflow)
 
     return parser
 

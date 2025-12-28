@@ -3,6 +3,8 @@
 ; - Uses assets found in the same directory as this script
 
 !include "MUI2.nsh"
+!include "LogicLib.nsh"
+!include "WinMessages.nsh"
 
 ; ---------------------
 ; ---------------------
@@ -63,13 +65,51 @@ SetCompressor /SOLID zlib
 !define MUI_FINISHPAGE_LINK_LOCATION "https://github.com/Ghua8088/pytron"
 
 ; ---------------------
+; Detect Existing Install
+; ---------------------
+Var IS_UPDATE
+
+Function .onInit
+    ReadRegStr $R0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${NAME}" "UninstallString"
+    ${If} $R0 != ""
+        StrCpy $IS_UPDATE "1"
+    ${Else}
+        StrCpy $IS_UPDATE "0"
+    ${EndIf}
+FunctionEnd
+
+; ---------------------
 ; Pages
 ; ---------------------
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW WelcomeShow
 !insertmacro MUI_PAGE_WELCOME
+
+Function WelcomeShow
+    ${If} $IS_UPDATE == "1"
+        ; MUI2 Welcome/Finish pages are special child dialogs (#32770)
+        FindWindow $1 "#32770" "" $HWNDPARENT
+        ; 1000 is the title control, 1001 is the text control
+        GetDlgItem $0 $1 1000
+        SendMessage $0 ${WM_SETTEXT} 0 "STR:Welcome to the ${NAME} Update/Repair Wizard"
+        GetDlgItem $0 $1 1001
+        SendMessage $0 ${WM_SETTEXT} 0 "STR:This wizard will guide you through updating or fixing your existing installation of ${NAME}.$\r$\n$\r$\nClick Next to continue."
+    ${EndIf}
+FunctionEnd
+
 ; !insertmacro MUI_PAGE_LICENSE "${BUILD_DIR}\\LICENSE.txt" ; Uncomment if you have a license
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
+
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW FinishShow
 !insertmacro MUI_PAGE_FINISH
+
+Function FinishShow
+    ${If} $IS_UPDATE == "1"
+        FindWindow $1 "#32770" "" $HWNDPARENT
+        GetDlgItem $0 $1 1000
+        SendMessage $0 ${WM_SETTEXT} 0 "STR:Update/Repair Complete"
+    ${EndIf}
+FunctionEnd
 
 !insertmacro MUI_UNPAGE_WELCOME
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -88,6 +128,7 @@ Section "Install"
     File /r "${BUILD_DIR}\*.*"
 
     ; Write useful uninstall registry entries
+    WriteRegStr HKLM "Software\${NAME}" "Install_Dir" "$INSTDIR"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${NAME}" "DisplayName" "${NAME}"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${NAME}" "DisplayVersion" "${VERSION}"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${NAME}" "Publisher" "${COMPANY}"
