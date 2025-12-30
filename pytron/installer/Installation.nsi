@@ -148,6 +148,9 @@ SectionEnd
 ; Uninstaller
 ; ---------------------
 Section "Uninstall"
+    ; Avoid locking the installation directory
+    SetOutPath "$TEMP"
+
     ; Remove shortcuts first
     Delete "$DESKTOP\${NAME}.lnk"
     Delete "$SMPROGRAMS\${NAME}\${NAME}.lnk"

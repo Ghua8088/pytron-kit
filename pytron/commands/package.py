@@ -606,6 +606,12 @@ def cmd_package(args: argparse.Namespace) -> int:
     if args.add_data:
         add_data.extend(args.add_data)
 
+    # Automatically include the icon file in the build output
+    # This ensures tray icons (which load from file) work in packaged builds
+    if app_icon and os.path.exists(app_icon):
+        add_data.append(f"{app_icon}{os.pathsep}.")
+        log(f"Auto-including icon file: {Path(app_icon).name}", style="dim")
+
     script_dir = script.parent
 
     # 1. settings.json

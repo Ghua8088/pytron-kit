@@ -27,6 +27,8 @@ class ReactiveState:
             for window in list(app_ref.windows):
                 try:
                     window.emit('pytron:state-update', {'key': key, 'value': value})
+                    # Compatibility: Emit the full state to pytron:state
+                    window.emit('pytron:state', self.to_dict())
                 except Exception as e:
                     print(f"[Pytron] Error emitting state update for key '{key}': {e}")
 

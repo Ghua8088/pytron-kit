@@ -19,3 +19,4 @@ class PlatformInterface:
     def save_file_dialog(self, w, title, default_path=None, default_name=None, file_types=None): return None
     def open_folder_dialog(self, w, title, default_path=None): return None
     def set_slim_titlebar(self, w, enabled): pass
+    def set_launch_on_boot(self, app_name, exe_path, enable=True): pass

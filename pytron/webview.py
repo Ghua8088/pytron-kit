@@ -9,10 +9,10 @@ import pathlib
 import platform
 from collections import deque
 import logging
-from .exceptions import ResourceNotFoundError, BridgeError
 import os
 from .bindings import lib, dispatch_callback, BindCallback, IS_ANDROID
 from .serializer import pytron_serialize
+from .exceptions import ResourceNotFoundError, BridgeError, ConfigError
 from .platforms.interface import PlatformInterface
 from .platforms.windows import WindowsImplementation
 from .platforms.linux import LinuxImplementation
@@ -31,6 +31,7 @@ c_dispatch_handler = dispatch_callback(_dispatch_handler)
 # -------------------------------------------------------------------
 class Webview:
     def __init__(self, config):
+        self.config = config
         self.logger = logging.getLogger("Pytron.Webview")
         
         # ------------------------------------------------
@@ -58,10 +59,13 @@ class Webview:
             self._cb = c_dispatch_handler
             
         # Default Bindings
-        self.bind("pytron_drag", lambda: self.start_drag(), run_in_thread=False)
         self.bind("pytron_minimize", lambda: self.minimize(), run_in_thread=False)
-        self.bind("pytron_close", lambda: self.close(), run_in_thread=False)
+        self.bind("pytron_close", self.close, run_in_thread=False)
         self.bind("pytron_toggle_maximize", lambda: self.toggle_maximize(), run_in_thread=False)
+        self.bind("pytron_drag", lambda: self.start_drag(), run_in_thread=False)
+        self.bind("pytron_set_title", self.set_title, run_in_thread=False)
+        self.bind("pytron_set_size", self.set_size, run_in_thread=False)
+        self.bind("pytron_center", self.center, run_in_thread=False)
         self.bind("pytron_set_bounds", self.set_bounds, run_in_thread=False)
         
         # New Daemon bindings
@@ -69,6 +73,7 @@ class Webview:
         self.bind("pytron_show", lambda: self.show(), run_in_thread=False)
         self.bind("pytron_system_notification", self.system_notification, run_in_thread=True)
         self.bind("pytron_set_taskbar_progress", self.set_taskbar_progress, run_in_thread=True)
+        self.bind("pytron_notify", self.notify, run_in_thread=False)
          
         # Dialog bindings
         self.bind("pytron_dialog_open_file", self.dialog_open_file, run_in_thread=True)
@@ -170,7 +175,12 @@ class Webview:
         else:
             self._platform.set_bounds(self.w, x, y, width, height)
 
-    def close(self):
+    def close(self, force=False):
+        # Check for 'close_to_tray' setting
+        if not force and self.config.get("close_to_tray", False):
+            self.hide()
+            return
+
         if self.is_pyside:
             self.pyside.view.close()
         else:
@@ -223,8 +233,10 @@ class Webview:
         else:
              self._platform.show(self.w)
 
-    def system_notification(self, title, message):
-        self._platform.notification(self.w, title, message)
+    def system_notification(self, title, message, icon=None):
+        if not icon and self.config:
+            icon = self.config.get("icon")
+        self._platform.notification(self.w, title, message, icon)
 
     def set_taskbar_progress(self, state="normal", value=0, max_value=100):
         if self._platform and hasattr(self._platform, 'set_taskbar_progress'):
@@ -232,6 +244,11 @@ class Webview:
 
     def set_icon(self, icon_path):
         self._platform.set_window_icon(self.w, icon_path)
+
+    def center(self):
+        """Centers the window on the primary screen."""
+        if self._platform and hasattr(self._platform, 'center'):
+             self._platform.center(self.w)
 
     # --- Native Dialogs ---
     def dialog_open_file(self, title="Open File", default_path=None, file_types=None):
@@ -431,6 +448,10 @@ class Webview:
             config["navigate_on_init"] = False 
             return
         raw_url = config.get("url")
+        if not raw_url:
+            self.logger.error("No URL provided in configuration. Pytron needs a URL or HTML file to load.")
+            raise ConfigError("No URL or HTML file specified in configuration.")
+            
         if raw_url.startswith(("http://", "https://", "file://")):
             return 
         path_obj = pathlib.Path(raw_url)

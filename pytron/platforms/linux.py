@@ -1,7 +1,7 @@
 import ctypes
 from ..bindings import lib
 from .interface import PlatformInterface
-
+import os
 class LinuxImplementation(PlatformInterface):
     def __init__(self):
         try:
@@ -285,4 +285,44 @@ class LinuxImplementation(PlatformInterface):
             glib.g_set_application_name(app_id.encode('utf-8'))
         except Exception:
             pass
+
+    def set_launch_on_boot(self, app_name, exe_path, enable=True):
+        import os
+        
+        # XDG Autostart
+        config_home = os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config'))
+        autostart_dir = os.path.join(config_home, 'autostart')
+        desktop_file = os.path.join(autostart_dir, f"{app_name}.desktop")
+        
+        if enable:
+            try:
+                os.makedirs(autostart_dir, exist_ok=True)
+                
+                # Check if we need to run python explicitly if not frozen (Linux usually needs shebang/env)
+                # But implementation in App.py passes full command string if needed.
+                # However, .desktop Exec key doesn't like complex quoting sometimes.
+                # Let's write what we got.
+                
+                content = f"""[Desktop Entry]
+Type=Application
+Name={app_name}
+Exec={exe_path}
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+"""
+                with open(desktop_file, 'w') as f:
+                    f.write(content)
+                return True
+            except Exception as e:
+                print(f"[Pytron] Failed to enable autostart on Linux: {e}")
+                return False
+        else:
+            try:
+                if os.path.exists(desktop_file):
+                    os.remove(desktop_file)
+                return True
+            except Exception as e:
+                 print(f"[Pytron] Failed to disable autostart on Linux: {e}")
+                 return False
 

@@ -27,7 +27,8 @@ dependencies = [
   "pyobjc-framework-Cocoa; sys_platform == 'darwin'",
   "pyobjc-framework-WebKit; sys_platform == 'darwin'",
   "PyGObject==3.42.2; sys_platform == 'linux'",
-  "rich"
+  "rich",
+  "lief"
 ]
 classifiers = [
   "Programming Language :: Python :: 3",

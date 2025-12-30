@@ -2,7 +2,7 @@ import ctypes
 import ctypes.util
 from ..bindings import lib
 from .interface import PlatformInterface
-
+import os
 class DarwinImplementation(PlatformInterface):
     def __init__(self):
         try:
@@ -357,3 +357,52 @@ class DarwinImplementation(PlatformInterface):
             f_set(proc_info, sel_set_name, name_str)
         except Exception:
             pass
+
+    def set_launch_on_boot(self, app_name, exe_path, enable=True):
+        import os
+        import shlex
+        
+        home = os.path.expanduser('~')
+        launch_agents = os.path.join(home, 'Library/LaunchAgents')
+        plist_file = os.path.join(launch_agents, f"com.{app_name.lower()}.startup.plist")
+        
+        if enable:
+            try:
+                os.makedirs(launch_agents, exist_ok=True)
+                
+                # Parse the command string to argument list
+                # Remove quotes if they wrap the whole path unnecessarily, but shlex handles it better.
+                args = shlex.split(exe_path)
+                
+                # Build XML Array
+                array_str = "\n".join([f"    <string>{a}</string>" for a in args])
+                
+                content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.{app_name.lower()}.startup</string>
+    <key>ProgramArguments</key>
+    <array>
+{array_str}
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+"""
+                with open(plist_file, 'w') as f:
+                    f.write(content)
+                return True
+            except Exception as e:
+                print(f"[Pytron] Failed to enable launch agent on macOS: {e}")
+                return False
+        else:
+            try:
+                if os.path.exists(plist_file):
+                     os.remove(plist_file)
+                return True
+            except Exception as e:
+                 print(f"[Pytron] Failed to disable launch agent on macOS: {e}")
+                 return False

@@ -1,6 +1,7 @@
 import argparse
 import subprocess
 import sys
+import shutil
 import os
 import json
 from pathlib import Path
@@ -43,12 +44,23 @@ def cmd_init(args: argparse.Namespace) -> int:
         "dimensions":[800, 600],
         "frameless": False,
         "default_context_menu": False,
+        "icon": "pytron.ico",
         "url": dist_path,
         "author": "Your Name",
         "description": "A brief description of your app",
         "copyright": "Copyright © 2025 Your Name"
     }
     settings_file.write_text(json.dumps(settings_data, indent=4))
+
+    # Copy Pytron icon
+    try:
+        pytron_pkg_dir = Path(__file__).resolve().parent.parent
+        default_icon_src = pytron_pkg_dir / 'installer' / 'pytron.ico'
+        if default_icon_src.exists():
+            shutil.copy2(default_icon_src, target / 'pytron.ico')
+            log("Added default Pytron icon", style="success")
+    except Exception as e:
+        log(f"Warning: Could not copy default icon: {e}", style="warning")
 
     progress = get_progress()
     progress.start()

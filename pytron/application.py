@@ -3,6 +3,7 @@ import sys
 import json
 import inspect
 import typing
+from typing import Optional, List, Dict, Union, Any, Callable
 import shutil
 from .utils import get_resource_path
 from .state import ReactiveState
@@ -11,6 +12,8 @@ from .webview import Webview
 from .serializer import pydantic
 import logging
 from .exceptions import ConfigError, BridgeError
+from .tray import SystemTray
+from .shortcuts import ShortcutManager
 
 class App:
     def __init__(self, config_file='settings.json'):
@@ -20,11 +23,13 @@ class App:
         self._exposed_functions = {} # Global functions for all windows
         self._exposed_ts_defs = {} # Store generated TS definitions
         self._pydantic_models = {} # Store pydantic models to generate interfaces for
-        self.shortcuts = {} # Global shortcuts
+        self.shortcuts = {} # Decorator storage
         self.storage_path = None # Initialize storage_path
         self.plugins = [] # Store loaded plugins
-
+        self._on_exit_callbacks = [] # Callbacks to run on exit
         
+        self.tray: Optional[SystemTray] = None
+        self.shortcut_manager = ShortcutManager()
         # Configure logging
         logging.basicConfig(
             level=logging.INFO,
@@ -116,16 +121,39 @@ class App:
         else:
             self.storage_path = os.path.join(base_path, safe_title)
 
-        # Save original CWD for resource resolution
-        self.app_root = os.getcwd()
+        # Save original root for resource resolution
+        if getattr(sys, 'frozen', False):
+            self.app_root = os.path.dirname(sys.executable)
+        else:
+            self.app_root = os.getcwd()
 
-        # FIX: Resolve URL to absolute path before changing CWD (critical for Dev mode)
-        # Otherwise Webview attempts to find index.html in AppData
-        if not getattr(sys, 'frozen', False):
-             if 'url' in self.config and not self.config['url'].startswith(('http:', 'https:', 'file:')):
-                  self.config['url'] = os.path.join(self.app_root, self.config['url'])
-             if 'icon' in self.config and not os.path.isabs(self.config['icon']):
-                  self.config['icon'] = os.path.join(self.app_root, self.config['icon'])
+        # FIX: Resolve URL and icon to absolute paths before changing CWD
+        def resolve_resource(path):
+            if not path or path.startswith(('http:', 'https:', 'file:')) or os.path.isabs(path):
+                return path
+            
+            # 1. Try inside _internal (PyInstaller 6+ onedir) - BEST for assets
+            internal = os.path.join(self.app_root, "_internal", path)
+            if os.path.exists(internal): return internal
+            
+            # 2. Try relative to app_root (root of installation)
+            candidate = os.path.join(self.app_root, path)
+            if os.path.exists(candidate): return candidate
+            
+            # 3. Fallback to resource path (handles _MEIPASS)
+            return get_resource_path(path)
+
+        if 'url' in self.config:
+            self.config['url'] = resolve_resource(self.config['url'])
+        
+        if 'icon' in self.config:
+            orig_icon = self.config['icon']
+            resolved_icon = resolve_resource(orig_icon)
+            if os.path.exists(resolved_icon):
+                self.config['icon'] = resolved_icon
+                self.logger.info(f"Resolved icon to: {resolved_icon}")
+            else:
+                self.logger.warning(f"Could not find icon at: {orig_icon} (searched in {self.app_root})")
             
         try:
             os.makedirs(self.storage_path, exist_ok=True)
@@ -156,24 +184,35 @@ class App:
             self.logger.error(f"Unexpected error loading plugin from {manifest_path}: {e}")
 
     def _register_app_id(self, title, safe_title):
-        # Register App ID for process identity (Taskbar grouping/Notifications)
+        # Register App ID for process identity (Taskbar grouping/Notifications/Task Manager)
+        # Windows uses this ID to group child processes (like WebView2) under the same header.
         author = self.config.get('author', 'PytronUser')
+        
+        # Ensure we have a valid safe_title
+        if not safe_title:
+             safe_title = "".join([c for c in (title or "Pytron") if c.isalnum()]) or "PytronApp"
+             
         # AUMID format: Company.Product.SubComponent.Version
         app_id = f"{author}.{safe_title}.App"
-        try:
-             import platform
-             p = platform.system()
-             if p == "Windows":
+        
+        # Also try to set the process name if possible (purely for identification)
+        if sys.platform == 'win32':
+             try:
                  from .platforms.windows import WindowsImplementation
                  WindowsImplementation().set_app_id(app_id)
-             elif p == "Linux":
+                 self.logger.debug(f"Set Windows AppUserModelID: {app_id}")
+             except Exception as e:
+                 self.logger.debug(f"Failed to set App ID: {e}")
+        elif sys.platform == 'linux':
+             try:
                  from .platforms.linux import LinuxImplementation
                  LinuxImplementation().set_app_id(safe_title)
-             elif p == "Darwin":
+             except Exception: pass
+        elif sys.platform == 'darwin':
+             try:
                  from .platforms.darwin import DarwinImplementation
                  DarwinImplementation().set_app_id(title)
-        except Exception as e:
-             self.logger.debug(f"Failed to set App ID: {e}")
+             except Exception: pass
 
     def register_protocol(self, scheme="pytron"):
         """
@@ -238,6 +277,14 @@ class App:
         if original_url:
             window.navigate(window_config.get("url", original_url))
             
+        # Automatic centering if requested
+        if window_config.get("center", True): # Default to true for Raycast-like experience
+             window.center()
+
+        # Set window icon if specified
+        icon = window_config.get("icon")
+        if icon:
+            window.set_icon(icon)
         return window
 
     def run(self, **kwargs):
@@ -269,10 +316,36 @@ class App:
                 pass
             except Exception as e:
                 self.logger.debug(f"Error closing splash screen: {e}")
+            
+            # Start global shortcuts
+            for combo, func in self.shortcuts.items():
+                self.shortcut_manager.register(combo, func)
                 
+            # Start tray if configured
+            if self.tray:
+                self.tray.start(self)
+
             self.windows[0].start()
             
         self.is_running = False
+        
+        # Execute on_exit callbacks
+        for callback in self._on_exit_callbacks:
+            try:
+                if inspect.iscoroutinefunction(callback):
+                    # We can't easily await here since we might be off the main loop, 
+                    # but typically cleanup is sync. If async is needed, we'd need a runner.
+                    # For now, warn or try to run.
+                    pass 
+                else:
+                    callback()
+            except Exception as e:
+                self.logger.error(f"Error in on_exit callback: {e}")
+
+        # Cleanup Tray
+        if self.tray:
+            self.tray.stop()
+        self.shortcut_manager.stop()
         
         # Cleanup dev storage if needed
         if self.config.get('debug', False) and 'storage_path' in kwargs:
@@ -283,6 +356,14 @@ class App:
                   except Exception as e:
                       self.logger.debug(f"Failed to cleanup dev storage: {e}")
                       pass
+
+    def on_exit(self, func):
+        """
+        Register a function to run when the application is exiting.
+        Can be used as a decorator: @app.on_exit
+        """
+        self._on_exit_callbacks.append(func)
+        return func
 
     def broadcast(self, event_name, data):
         """
@@ -302,6 +383,33 @@ class App:
         Alias for broadcast. Emits to all windows.
         """
         self.broadcast(event_name, data)
+
+    def setup_tray(self, title: Optional[str] = None, icon: Optional[str] = None):
+        """
+        Initializes the system tray icon for the application.
+        """
+        if not title:
+            title = self.config.get('title', 'Pytron')
+        
+        if not icon and 'icon' in self.config:
+            icon = self.config['icon']
+            
+        if icon and not os.path.isabs(icon):
+            icon = os.path.join(self.app_root, icon)
+        
+        self.tray = SystemTray(title, icon)
+        return self.tray
+
+    def setup_tray_standard(self, title: Optional[str] = None, icon: Optional[str] = None):
+        """
+        Sets up a standard tray with 'Show App' and 'Quit' items.
+        """
+        tray = self.setup_tray(title, icon)
+        tray.add_item("Show App", self.show)
+        tray.add_item("Hide App", self.hide)
+        tray.add_separator()
+        tray.add_item("Quit", self.quit)
+        return tray
 
     def hide(self):
         """Hides all application windows (Daemon mode)."""
@@ -330,12 +438,17 @@ class App:
                 except Exception:
                     pass
 
-    def system_notification(self, title, message):
+    def system_notification(self, title: Optional[str] = None, message: str = ""):
         """Sends a system-level (tray/toast) notification via the OS."""
+        if not title:
+            title = self.config.get('author', self.config.get('title', 'Pytron'))
+            
+        icon = self.config.get('icon')
+        
         if self.windows:
             for window in self.windows:
                 try:
-                    window.system_notification(title, message)
+                    window.system_notification(title, message, icon=icon)
                     break 
                 except Exception:
                     pass
@@ -368,9 +481,45 @@ class App:
             return self.windows[0].message_box(title, message, style)
         return 0
 
+    def set_start_on_boot(self, enable=True):
+        """
+        Enables or disables automatic application startup on system boot.
+        """
+        app_name = self.config.get('title', 'PytronApp')
+        # Sanitize for registry key
+        safe_name = "".join(c if c.isalnum() else "_" for c in app_name)
+        
+        exe_path = sys.executable
+        if not getattr(sys, 'frozen', False):
+            # Development mode: python.exe "path/to/script.py"
+            # This is tricky because we need arguments.
+            # Windows registry Run key handles arguments fine.
+            main_script = os.path.abspath(sys.argv[0])
+            exe_path = f'"{sys.executable}" "{main_script}"'
+        else:
+            exe_path = f'"{exe_path}"' # Quote for safety
+            
+        # We need a platform instance.
+        # Since App doesn't hold it, we instantiate temporarily or grab from first window
+        if self.windows:
+             # Best effort
+             try:
+                 return self.windows[0]._platform.set_launch_on_boot(safe_name, exe_path, enable)
+             except Exception: pass
+        
+        # Fallback if no window yet or needed
+        try:
+            import platform
+            if platform.system() == "Windows":
+                 from .platforms.windows import WindowsImplementation
+                 return WindowsImplementation().set_launch_on_boot(safe_name, exe_path, enable)
+        except Exception as e:
+            self.logger.warning(f"Could not set start on boot: {e}")
+            
     def quit(self):
+        """Gracefully quits the application by closing all windows."""
         for window in self.windows:
-            window.close()
+            window.close(force=True)
     def _python_type_to_ts(self, py_type):
         if py_type == str: return "string"
         if py_type == int: return "number"
@@ -624,12 +773,17 @@ class App:
         # Map exposed name to Window class method name
         win_map = {
             'minimize': 'minimize',
-            'maximize': 'maximize',
-            'restore': 'restore',
-            'close': 'destroy',
-            'toggle_fullscreen': 'toggle_fullscreen',
-            'resize': 'resize',
-            'get_size': 'get_size',
+            'toggle_maximize': 'toggle_maximize',
+            'close': 'close',
+            'hide': 'hide',
+            'show': 'show',
+            'notify': 'notify',
+            'start_drag': 'start_drag',
+            'set_title': 'set_title',
+            'set_size': 'set_size',
+            'center': 'center',
+            'system_notification': 'system_notification',
+            'set_bounds': 'set_bounds',
         }
         for exposed_name, method_name in win_map.items():
             method = getattr(Webview, method_name, None)

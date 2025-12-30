@@ -80,6 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_pkg.add_argument('--smart-assets', action='store_true', help='Enable auto-inclusion of smart assets (non-code files).')
     p_pkg.add_argument('--pyside6', action='store_true', help='Use PySide6 engine')
     p_pkg.add_argument('--engine', help='Browser engine to use (native, pyside6)')
+    p_pkg.add_argument('--no-shake', action='store_true', help='Disable post-build optimization (Tree Shaking).')
     p_pkg.set_defaults(func=cmd_package)
     p_build = sub.add_parser('build-frontend', help='Run npm build in a frontend folder', parents=[base_parser])
     p_build.add_argument('folder', help='Frontend folder (contains package.json)')
