@@ -1,5 +1,8 @@
-![Pytron](pytron-banner.png)
+![Pytron](https://raw.githubusercontent.com/Ghua8088/pytron/main/pytron-banner.png)
 # Pytron
+
+[![PyPI Version](https://img.shields.io/pypi/v/pytron-kit.svg)](https://pypi.org/project/pytron-kit/)
+[![GitHub](https://img.shields.io/badge/github-repo-000000?logo=github)](https://github.com/Ghua8088/pytron)
 
 Pytron is a modern framework for building desktop applications using Python for the backend and web technologies (React, Vite) for the frontend. It combines the power of Python's ecosystem with the rich user interfaces of the web.
 
