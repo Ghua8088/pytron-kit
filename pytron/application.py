@@ -15,36 +15,37 @@ from .exceptions import ConfigError, BridgeError
 from .tray import SystemTray
 from .shortcuts import ShortcutManager
 
+
 class App:
-    def __init__(self, config_file='settings.json'):
+    def __init__(self, config_file="settings.json"):
         self.windows = []
         self.is_running = False
         self.config = {}
-        self._exposed_functions = {} # Global functions for all windows
-        self._exposed_ts_defs = {} # Store generated TS definitions
-        self._pydantic_models = {} # Store pydantic models to generate interfaces for
-        self.shortcuts = {} # Decorator storage
-        self.storage_path = None # Initialize storage_path
-        self.plugins = [] # Store loaded plugins
-        self._on_exit_callbacks = [] # Callbacks to run on exit
-        
+        self._exposed_functions = {}  # Global functions for all windows
+        self._exposed_ts_defs = {}  # Store generated TS definitions
+        self._pydantic_models = {}  # Store pydantic models to generate interfaces for
+        self.shortcuts = {}  # Decorator storage
+        self.storage_path = None  # Initialize storage_path
+        self.plugins = []  # Store loaded plugins
+        self._on_exit_callbacks = []  # Callbacks to run on exit
+
         self.tray: Optional[SystemTray] = None
         self.shortcut_manager = ShortcutManager()
         # Configure logging
         logging.basicConfig(
             level=logging.INFO,
-            format='[Pytron] %(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%H:%M:%S'
+            format="[Pytron] %(asctime)s - %(levelname)s - %(message)s",
+            datefmt="%H:%M:%S",
         )
         self.logger = logging.getLogger("Pytron")
 
-        self.state = ReactiveState(self) # Magic state object
-        
+        self.state = ReactiveState(self)  # Magic state object
+
         # Check for Deep Link Startup
         self.state.launch_url = None
         if len(sys.argv) > 1:
             possible_url = sys.argv[1]
-            if possible_url.startswith("pytron:") or "://" in possible_url: # Heuristic
+            if possible_url.startswith("pytron:") or "://" in possible_url:  # Heuristic
                 self.logger.info(f"App launched via Deep Link: {possible_url}")
                 self.state.launch_url = possible_url
 
@@ -57,35 +58,43 @@ class App:
         if not os.path.exists(path):
             # 2. Try relative to the current working directory (useful during dev if running from root)
             path = os.path.abspath(config_file)
-            
+
         if os.path.exists(path):
             try:
                 import json
-                with open(path, 'r') as f:
+
+                with open(path, "r") as f:
                     self.config = json.load(f)
                 # Update logging level if debug is enabled
-                if self.config.get('debug', False):
+                if self.config.get("debug", False):
                     self.logger.setLevel(logging.DEBUG)
                     # Ensure root handlers capture debug logs
                     for handler in logging.root.handlers:
                         handler.setLevel(logging.DEBUG)
-                    self.logger.debug("Debug mode enabled in settings.json. Verbose logging active.")
-                    
+                    self.logger.debug(
+                        "Debug mode enabled in settings.json. Verbose logging active."
+                    )
+
                     # Check for Dev Server Override
-                    dev_url = os.environ.get('PYTRON_DEV_URL')
+                    dev_url = os.environ.get("PYTRON_DEV_URL")
                     if dev_url:
-                        self.config['url'] = dev_url
+                        self.config["url"] = dev_url
                         self.logger.info(f"Dev mode: Overriding URL to {dev_url}")
 
                 # Check version compatibility
-                config_version = self.config.get('pytron_version')
+                config_version = self.config.get("pytron_version")
                 if config_version:
                     try:
                         from . import __version__
+
                         if config_version != __version__:
-                            self.logger.warning(f"Project settings version ({config_version}) does not match installed Pytron version ({__version__}).")
+                            self.logger.warning(
+                                f"Project settings version ({config_version}) does not match installed Pytron version ({__version__})."
+                            )
                     except ImportError:
-                        self.logger.debug("Could not verify Pytron version compatibility.")
+                        self.logger.debug(
+                            "Could not verify Pytron version compatibility."
+                        )
             except json.JSONDecodeError as e:
                 self.logger.error(f"Failed to parse settings.json: {e}")
                 raise ConfigError(f"Invalid JSON in settings file: {path}") from e
@@ -93,80 +102,96 @@ class App:
                 self.logger.error(f"Failed to load settings: {e}")
                 raise ConfigError(f"Could not load settings from {path}") from e
         else:
-            self.logger.warning(f"Settings file not found at {path}. Using default configuration.")
+            self.logger.warning(
+                f"Settings file not found at {path}. Using default configuration."
+            )
 
         # --- Initialize Environment & Storage Path ---
         # Calculate this immediately so the environment is sanitized before the user runs logic
-        title = self.config.get('title', 'Pytron App')
+        title = self.config.get("title", "Pytron App")
         # Sanitize title for folder name
-        safe_title = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in title).strip('_')
-        
+        safe_title = "".join(
+            c if c.isalnum() or c in ("-", "_") else "_" for c in title
+        ).strip("_")
+
         # Set Identity for Taskbar/System
         self._register_app_id(title, safe_title)
-        
-        if sys.platform == 'win32':
-            base_path = os.environ.get('LOCALAPPDATA', os.path.expanduser('~'))
-        elif os.environ.get('PYTHON_PLATFORM') == 'android':
+
+        if sys.platform == "win32":
+            base_path = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+        elif os.environ.get("PYTHON_PLATFORM") == "android":
             # On Android, we must use the app's private files directory.
             # The JNI bridge sets PYTHONHOME to filesDir/python
-            python_home = os.environ.get('PYTHONHOME')
+            python_home = os.environ.get("PYTHONHOME")
             if python_home:
                 base_path = os.path.dirname(python_home)
             else:
-                base_path = os.path.expanduser('~')
+                base_path = os.path.expanduser("~")
         else:
-            base_path = os.path.expanduser('~/.config')
-        
+            base_path = os.path.expanduser("~/.config")
+
         # If in debug mode, use a unique path to allow multiple instances
-        if self.config.get('debug', False):
-            self.storage_path = os.path.join(base_path, f"{safe_title}_Dev_{os.getpid()}")
+        if self.config.get("debug", False):
+            self.storage_path = os.path.join(
+                base_path, f"{safe_title}_Dev_{os.getpid()}"
+            )
         else:
             self.storage_path = os.path.join(base_path, safe_title)
 
         # Save original root for resource resolution
-        if getattr(sys, 'frozen', False):
+        if getattr(sys, "frozen", False):
             self.app_root = os.path.dirname(sys.executable)
         else:
             self.app_root = os.getcwd()
 
         # FIX: Resolve URL and icon to absolute paths before changing CWD
         def resolve_resource(path):
-            if not path or path.startswith(('http:', 'https:', 'file:')) or os.path.isabs(path):
+            if (
+                not path
+                or path.startswith(("http:", "https:", "file:"))
+                or os.path.isabs(path)
+            ):
                 return path
-            
+
             # 1. Try inside _internal (PyInstaller 6+ onedir) - BEST for assets
             internal = os.path.join(self.app_root, "_internal", path)
-            if os.path.exists(internal): return internal
-            
+            if os.path.exists(internal):
+                return internal
+
             # 2. Try relative to app_root (root of installation)
             candidate = os.path.join(self.app_root, path)
-            if os.path.exists(candidate): return candidate
-            
+            if os.path.exists(candidate):
+                return candidate
+
             # 3. Fallback to resource path (handles _MEIPASS)
             return get_resource_path(path)
 
-        if 'url' in self.config:
-            self.config['url'] = resolve_resource(self.config['url'])
-        
-        if 'icon' in self.config:
-            orig_icon = self.config['icon']
+        if "url" in self.config:
+            self.config["url"] = resolve_resource(self.config["url"])
+
+        if "icon" in self.config:
+            orig_icon = self.config["icon"]
             resolved_icon = resolve_resource(orig_icon)
             if os.path.exists(resolved_icon):
-                self.config['icon'] = resolved_icon
+                self.config["icon"] = resolved_icon
                 self.logger.info(f"Resolved icon to: {resolved_icon}")
             else:
-                self.logger.warning(f"Could not find icon at: {orig_icon} (searched in {self.app_root})")
-            
+                self.logger.warning(
+                    f"Could not find icon at: {orig_icon} (searched in {self.app_root})"
+                )
+
         try:
             os.makedirs(self.storage_path, exist_ok=True)
-            
+
             # Change CWD to storage_path to allow writing logs/dbs
             # consistently in both Dev and Frozen/Packaged modes.
             # This redirects relative file actions to the AppData/Config directory.
             os.chdir(self.storage_path)
             self.logger.info(f"Changed Working Directory to: {self.storage_path}")
         except Exception as e:
-            self.logger.warning(f"Could not create storage directory at {self.storage_path}: {e}")
+            self.logger.warning(
+                f"Could not create storage directory at {self.storage_path}: {e}"
+            )
             pass
 
     def load_plugin(self, manifest_path):
@@ -174,6 +199,7 @@ class App:
         Loads a plugin from a manifest.json file.
         """
         from .plugin import Plugin, PluginError
+
         try:
             plugin = Plugin(manifest_path)
             plugin.check_dependencies()
@@ -183,38 +209,47 @@ class App:
         except PluginError as e:
             self.logger.error(f"Failed to load plugin from {manifest_path}: {e}")
         except Exception as e:
-            self.logger.error(f"Unexpected error loading plugin from {manifest_path}: {e}")
+            self.logger.error(
+                f"Unexpected error loading plugin from {manifest_path}: {e}"
+            )
 
     def _register_app_id(self, title, safe_title):
         # Register App ID for process identity (Taskbar grouping/Notifications/Task Manager)
         # Windows uses this ID to group child processes (like WebView2) under the same header.
-        author = self.config.get('author', 'PytronUser')
-        
+        author = self.config.get("author", "PytronUser")
+
         # Ensure we have a valid safe_title
         if not safe_title:
-             safe_title = "".join([c for c in (title or "Pytron") if c.isalnum()]) or "PytronApp"
-             
+            safe_title = (
+                "".join([c for c in (title or "Pytron") if c.isalnum()]) or "PytronApp"
+            )
+
         # AUMID format: Company.Product.SubComponent.Version
         app_id = f"{author}.{safe_title}.App"
-        
+
         # Also try to set the process name if possible (purely for identification)
-        if sys.platform == 'win32':
-             try:
-                 from .platforms.windows import WindowsImplementation
-                 WindowsImplementation().set_app_id(app_id)
-                 self.logger.debug(f"Set Windows AppUserModelID: {app_id}")
-             except Exception as e:
-                 self.logger.debug(f"Failed to set App ID: {e}")
-        elif sys.platform == 'linux':
-             try:
-                 from .platforms.linux import LinuxImplementation
-                 LinuxImplementation().set_app_id(safe_title)
-             except Exception: pass
-        elif sys.platform == 'darwin':
-             try:
-                 from .platforms.darwin import DarwinImplementation
-                 DarwinImplementation().set_app_id(title)
-             except Exception: pass
+        if sys.platform == "win32":
+            try:
+                from .platforms.windows import WindowsImplementation
+
+                WindowsImplementation().set_app_id(app_id)
+                self.logger.debug(f"Set Windows AppUserModelID: {app_id}")
+            except Exception as e:
+                self.logger.debug(f"Failed to set App ID: {e}")
+        elif sys.platform == "linux":
+            try:
+                from .platforms.linux import LinuxImplementation
+
+                LinuxImplementation().set_app_id(safe_title)
+            except Exception:
+                pass
+        elif sys.platform == "darwin":
+            try:
+                from .platforms.darwin import DarwinImplementation
+
+                DarwinImplementation().set_app_id(title)
+            except Exception:
+                pass
 
     def register_protocol(self, scheme="pytron"):
         """
@@ -225,18 +260,22 @@ class App:
         # But Webview holds it. App doesn't directly hold platform unless we refactor.
         # Temp workaround: Instantiate platform impl directly since it's just registry logic
         try:
-             import platform
-             if platform.system() == "Windows":
-                 from .platforms.windows import WindowsImplementation
-                 impl = WindowsImplementation()
-                 if impl.register_protocol(scheme):
-                     self.logger.info(f"Successfully registered protocol: {scheme}://")
-                 else:
-                     self.logger.warning(f"Failed to register protocol: {scheme}://")
-             else:
-                 self.logger.warning(f"Protocol registration not implemented for {platform.system()}")
+            import platform
+
+            if platform.system() == "Windows":
+                from .platforms.windows import WindowsImplementation
+
+                impl = WindowsImplementation()
+                if impl.register_protocol(scheme):
+                    self.logger.info(f"Successfully registered protocol: {scheme}://")
+                else:
+                    self.logger.warning(f"Failed to register protocol: {scheme}://")
+            else:
+                self.logger.warning(
+                    f"Protocol registration not implemented for {platform.system()}"
+                )
         except Exception as e:
-             self.logger.error(f"Error registering protocol: {e}")
+            self.logger.error(f"Error registering protocol: {e}")
 
     def create_window(self, **kwargs):
         """
@@ -244,44 +283,48 @@ class App:
         Automatically binds any exposed functions to the new window.
         """
         # Resolve 'url' in kwargs if present (assuming relative to app_root)
-        if 'url' in kwargs and not getattr(sys, 'frozen', False):
-             if not kwargs['url'].startswith(('http:', 'https:', 'file:')):
-                  if not os.path.isabs(kwargs['url']):
-                        kwargs['url'] = os.path.join(self.app_root, kwargs['url'])
+        if "url" in kwargs and not getattr(sys, "frozen", False):
+            if not kwargs["url"].startswith(("http:", "https:", "file:")):
+                if not os.path.isabs(kwargs["url"]):
+                    kwargs["url"] = os.path.join(self.app_root, kwargs["url"])
 
         # Merge config
         window_config = self.config.copy()
         window_config.update(kwargs)
-        
+
         # Defer navigation until after bindings are applied
         original_url = window_config.get("url")
         window_config["navigate_on_init"] = False
-        
+
         window = Webview(config=window_config)
         self.windows.append(window)
-        
+
         # Bind exposed functions to the new window
         for name, data in self._exposed_functions.items():
-            func = data['func']
-            secure = data['secure']
-            
+            func = data["func"]
+            secure = data["secure"]
+
             # Legacy check: if for some reason a raw class ended up here (unlikely with current expose logic)
             if isinstance(func, type):
                 try:
                     window.expose(func)
                 except Exception as e:
-                    self.logger.debug(f"Failed to expose class {name} directly: {e}. Falling back to binding as callable.")
+                    self.logger.debug(
+                        f"Failed to expose class {name} directly: {e}. Falling back to binding as callable."
+                    )
                     window.bind(name, func, secure=secure)
             else:
                 window.bind(name, func, secure=secure)
-        
+
         # Now navigate, sending all bindings (scripts) in the payload
         if original_url:
             window.navigate(window_config.get("url", original_url))
-            
+
         # Automatic centering if requested
-        if window_config.get("center", True): # Default to true for Raycast-like experience
-             window.center()
+        if window_config.get(
+            "center", True
+        ):  # Default to true for Raycast-like experience
+            window.center()
 
         # Set window icon if specified
         icon = window_config.get("icon")
@@ -291,16 +334,16 @@ class App:
 
     def run(self, **kwargs):
         self.is_running = True
-        
+
         # Respect override if provided
-        if 'storage_path' in kwargs:
-            pass 
+        if "storage_path" in kwargs:
+            pass
         else:
-            kwargs['storage_path'] = self.storage_path
-            
+            kwargs["storage_path"] = self.storage_path
+
         # Set WebView2 User Data Folder to avoid writing to exe dir
-        if sys.platform == 'win32' and 'storage_path' in kwargs:
-             os.environ["WEBVIEW2_USER_DATA_FOLDER"] = kwargs['storage_path']
+        if sys.platform == "win32" and "storage_path" in kwargs:
+            os.environ["WEBVIEW2_USER_DATA_FOLDER"] = kwargs["storage_path"]
 
         # Ensure at least one window exists
         if not self.windows:
@@ -311,6 +354,7 @@ class App:
             # Check for PyInstaller Splash Screen and close it before showing UI
             try:
                 import pyi_splash
+
                 if pyi_splash.is_alive():
                     pyi_splash.close()
                     self.logger.info("Closed splash screen.")
@@ -318,27 +362,27 @@ class App:
                 pass
             except Exception as e:
                 self.logger.debug(f"Error closing splash screen: {e}")
-            
+
             # Start global shortcuts
             for combo, func in self.shortcuts.items():
                 self.shortcut_manager.register(combo, func)
-                
+
             # Start tray if configured
             if self.tray:
                 self.tray.start(self)
 
             self.windows[0].start()
-            
+
         self.is_running = False
-        
+
         # Execute on_exit callbacks
         for callback in self._on_exit_callbacks:
             try:
                 if inspect.iscoroutinefunction(callback):
-                    # We can't easily await here since we might be off the main loop, 
+                    # We can't easily await here since we might be off the main loop,
                     # but typically cleanup is sync. If async is needed, we'd need a runner.
                     # For now, warn or try to run.
-                    pass 
+                    pass
                 else:
                     callback()
             except Exception as e:
@@ -348,16 +392,16 @@ class App:
         if self.tray:
             self.tray.stop()
         self.shortcut_manager.stop()
-        
+
         # Cleanup dev storage if needed
-        if self.config.get('debug', False) and 'storage_path' in kwargs:
-             path = kwargs['storage_path']
-             if os.path.isdir(path) and f"_Dev_{os.getpid()}" in path:
-                  try:
-                      shutil.rmtree(path, ignore_errors=True)
-                  except Exception as e:
-                      self.logger.debug(f"Failed to cleanup dev storage: {e}")
-                      pass
+        if self.config.get("debug", False) and "storage_path" in kwargs:
+            path = kwargs["storage_path"]
+            if os.path.isdir(path) and f"_Dev_{os.getpid()}" in path:
+                try:
+                    shutil.rmtree(path, ignore_errors=True)
+                except Exception as e:
+                    self.logger.debug(f"Failed to cleanup dev storage: {e}")
+                    pass
 
     def on_exit(self, func):
         """
@@ -391,18 +435,20 @@ class App:
         Initializes the system tray icon for the application.
         """
         if not title:
-            title = self.config.get('title', 'Pytron')
-        
-        if not icon and 'icon' in self.config:
-            icon = self.config['icon']
-            
+            title = self.config.get("title", "Pytron")
+
+        if not icon and "icon" in self.config:
+            icon = self.config["icon"]
+
         if icon and not os.path.isabs(icon):
             icon = os.path.join(self.app_root, icon)
-        
+
         self.tray = SystemTray(title, icon)
         return self.tray
 
-    def setup_tray_standard(self, title: Optional[str] = None, icon: Optional[str] = None):
+    def setup_tray_standard(
+        self, title: Optional[str] = None, icon: Optional[str] = None
+    ):
         """
         Sets up a standard tray with 'Show App' and 'Quit' items.
         """
@@ -443,15 +489,15 @@ class App:
     def system_notification(self, title: Optional[str] = None, message: str = ""):
         """Sends a system-level (tray/toast) notification via the OS."""
         if not title:
-            title = self.config.get('author', self.config.get('title', 'Pytron'))
-            
-        icon = self.config.get('icon')
-        
+            title = self.config.get("author", self.config.get("title", "Pytron"))
+
+        icon = self.config.get("icon")
+
         if self.windows:
             for window in self.windows:
                 try:
                     window.system_notification(title, message, icon=icon)
-                    break 
+                    break
                 except Exception:
                     pass
 
@@ -461,10 +507,14 @@ class App:
             return self.windows[0].dialog_open_file(title, default_path, file_types)
         return None
 
-    def dialog_save_file(self, title="Save File", default_path=None, default_name=None, file_types=None):
+    def dialog_save_file(
+        self, title="Save File", default_path=None, default_name=None, file_types=None
+    ):
         """Opens a native save file dialog. Returns the selected path or None."""
         if self.windows:
-            return self.windows[0].dialog_save_file(title, default_path, default_name, file_types)
+            return self.windows[0].dialog_save_file(
+                title, default_path, default_name, file_types
+            )
         return None
 
     def dialog_open_folder(self, title="Select Folder", default_path=None):
@@ -487,65 +537,84 @@ class App:
         """
         Enables or disables automatic application startup on system boot.
         """
-        app_name = self.config.get('title', 'PytronApp')
+        app_name = self.config.get("title", "PytronApp")
         # Sanitize for registry key
         safe_name = "".join(c if c.isalnum() else "_" for c in app_name)
-        
+
         exe_path = sys.executable
-        if not getattr(sys, 'frozen', False):
+        if not getattr(sys, "frozen", False):
             # Development mode: python.exe "path/to/script.py"
             # This is tricky because we need arguments.
             # Windows registry Run key handles arguments fine.
             main_script = os.path.abspath(sys.argv[0])
             exe_path = f'"{sys.executable}" "{main_script}"'
         else:
-            exe_path = f'"{exe_path}"' # Quote for safety
-            
+            exe_path = f'"{exe_path}"'  # Quote for safety
+
         # We need a platform instance.
         # Since App doesn't hold it, we instantiate temporarily or grab from first window
         if self.windows:
-             # Best effort
-             try:
-                 return self.windows[0]._platform.set_launch_on_boot(safe_name, exe_path, enable)
-             except Exception: pass
-        
+            # Best effort
+            try:
+                return self.windows[0]._platform.set_launch_on_boot(
+                    safe_name, exe_path, enable
+                )
+            except Exception:
+                pass
+
         # Fallback if no window yet or needed
         try:
             import platform
+
             if platform.system() == "Windows":
-                 from .platforms.windows import WindowsImplementation
-                 return WindowsImplementation().set_launch_on_boot(safe_name, exe_path, enable)
+                from .platforms.windows import WindowsImplementation
+
+                return WindowsImplementation().set_launch_on_boot(
+                    safe_name, exe_path, enable
+                )
         except Exception as e:
             self.logger.warning(f"Could not set start on boot: {e}")
-            
+
     def quit(self):
         """Gracefully quits the application by closing all windows."""
         for window in self.windows:
             window.close(force=True)
+
     def _python_type_to_ts(self, py_type):
-        if py_type == str: return "string"
-        if py_type == int: return "number"
-        if py_type == float: return "number"
-        if py_type == bool: return "boolean"
-        if py_type == type(None): return "void"
-        if py_type == list: return "any[]"
-        if py_type == dict: return "Record<string, any>"
-        
+        if py_type == str:
+            return "string"
+        if py_type == int:
+            return "number"
+        if py_type == float:
+            return "number"
+        if py_type == bool:
+            return "boolean"
+        if py_type == type(None):
+            return "void"
+        if py_type == list:
+            return "any[]"
+        if py_type == dict:
+            return "Record<string, any>"
+
         # Handle Pydantic Models
-        if pydantic and isinstance(py_type, type) and issubclass(py_type, pydantic.BaseModel):
+        if (
+            pydantic
+            and isinstance(py_type, type)
+            and issubclass(py_type, pydantic.BaseModel)
+        ):
             model_name = py_type.__name__
             self._pydantic_models[model_name] = py_type
             return model_name
 
         # Handle typing module
-        origin = getattr(py_type, '__origin__', None)
-        args = getattr(py_type, '__args__', ())
-        
+        origin = getattr(py_type, "__origin__", None)
+        args = getattr(py_type, "__args__", ())
+
         if origin is list or origin is typing.List:
             if args:
                 return f"{self._python_type_to_ts(args[0])}[]"
             return "any[]"
-        
+
         if origin is dict or origin is typing.Dict:
             if args and len(args) == 2:
                 k = self._python_type_to_ts(args[0])
@@ -554,55 +623,58 @@ class App:
                     return f"Record<number, {v}>"
                 return f"Record<string, {v}>"
             return "Record<string, any>"
-            
+
         if origin is typing.Union:
             non_none = [t for t in args if t != type(None)]
             # Check for pydantic models inside Union
             if pydantic:
                 for t in non_none:
-                     if isinstance(t, type) and issubclass(t, pydantic.BaseModel):
-                          self._pydantic_models[t.__name__] = t
+                    if isinstance(t, type) and issubclass(t, pydantic.BaseModel):
+                        self._pydantic_models[t.__name__] = t
 
             if len(non_none) == len(args):
                 return " | ".join([self._python_type_to_ts(t) for t in args])
             else:
                 if len(non_none) == 1:
                     return f"{self._python_type_to_ts(non_none[0])} | null"
-                return " | ".join([self._python_type_to_ts(t) for t in non_none]) + " | null"
+                return (
+                    " | ".join([self._python_type_to_ts(t) for t in non_none])
+                    + " | null"
+                )
 
         return "any"
 
     def _generate_pydantic_interface(self, model_name, model_cls):
         lines = [f"  export interface {model_name} {{"]
-        
+
         # Pydantic v1 vs v2
         fields = {}
-        if hasattr(model_cls, 'model_fields'): # v2
+        if hasattr(model_cls, "model_fields"):  # v2
             fields = model_cls.model_fields
-        elif hasattr(model_cls, '__fields__'): # v1
+        elif hasattr(model_cls, "__fields__"):  # v1
             fields = model_cls.__fields__
-            
+
         for field_name, field in fields.items():
             # Get type annotation
-            if hasattr(field, 'annotation'): # v2
+            if hasattr(field, "annotation"):  # v2
                 py_type = field.annotation
-            elif hasattr(field, 'type_'): # v1
+            elif hasattr(field, "type_"):  # v1
                 py_type = field.type_
             else:
                 py_type = typing.Any
-                
+
             ts_type = self._python_type_to_ts(py_type)
-            
+
             # Check if optional
             is_optional = False
-            if hasattr(field, 'is_required'): # v2
-                 is_optional = not field.is_required()
-            elif hasattr(field, 'required'): # v1
-                 is_optional = not field.required
-            
+            if hasattr(field, "is_required"):  # v2
+                is_optional = not field.is_required()
+            elif hasattr(field, "required"):  # v1
+                is_optional = not field.required
+
             suffix = "?" if is_optional else ""
             lines.append(f"    {field_name}{suffix}: {ts_type};")
-            
+
         lines.append("  }")
         return "\n".join(lines)
 
@@ -610,35 +682,36 @@ class App:
         try:
             sig = inspect.signature(func)
             params = []
-            
+
             for param_name, param in sig.parameters.items():
-                if param_name == "self": continue
-                
+                if param_name == "self":
+                    continue
+
                 py_type = param.annotation
                 ts_type = self._python_type_to_ts(py_type)
                 if py_type == inspect.Parameter.empty:
                     ts_type = "any"
-                    
+
                 params.append(f"{param_name}: {ts_type}")
-            
+
             param_str = ", ".join(params)
-            
+
             return_annotation = sig.return_annotation
             ts_return = self._python_type_to_ts(return_annotation)
             if return_annotation == inspect.Parameter.empty:
                 ts_return = "any"
-            
+
             lines = []
             doc = inspect.getdoc(func)
             if doc:
                 lines.append("    /**")
-                for line in doc.split('\n'):
+                for line in doc.split("\n"):
                     lines.append(f"     * {line}")
                 lines.append("     */")
-            
+
             lines.append(f"    {name}({param_str}): Promise<{ts_return}>;")
             return "\n".join(lines)
-            
+
         except Exception as e:
             self.logger.warning(f"Could not generate types for {name}: {e}")
             return f"    {name}(...args: any[]): Promise<any>;"
@@ -650,14 +723,16 @@ class App:
         """
         # Case 1: Used as @app.expose(secure=True) - func is None
         if func is None:
+
             def decorator(f):
                 self.expose(f, name=name, secure=secure)
                 return f
+
             return decorator
-        
+
         # Case 2: Used as @app.expose or app.expose(func)
         # If the user passed a class or an object (bridge), expose its public callables
-        if isinstance(func, type) or (not callable(func) and hasattr(func, '__dict__')):
+        if isinstance(func, type) or (not callable(func) and hasattr(func, "__dict__")):
             # Try to instantiate the class if a class was provided, otherwise use the instance
             bridge = None
             if isinstance(func, type):
@@ -670,7 +745,7 @@ class App:
                 bridge = func
 
             for attr_name in dir(bridge):
-                if attr_name.startswith('_'):
+                if attr_name.startswith("_"):
                     continue
                 try:
                     attr = getattr(bridge, attr_name)
@@ -678,19 +753,24 @@ class App:
                     continue
                 if callable(attr):
                     try:
-                        # For classes, we assume default security unless specified? 
+                        # For classes, we assume default security unless specified?
                         # Or maybe we shouldn't support granular security on class-based expose yet for simplicity
                         # just pass 'secure' to all methods.
-                        self._exposed_functions[attr_name] = {'func': attr, 'secure': secure}
-                        self._exposed_ts_defs[attr_name] = self._get_ts_definition(attr_name, attr)
+                        self._exposed_functions[attr_name] = {
+                            "func": attr,
+                            "secure": secure,
+                        }
+                        self._exposed_ts_defs[attr_name] = self._get_ts_definition(
+                            attr_name, attr
+                        )
                     except Exception:
                         pass
             return func
 
         if name is None:
             name = func.__name__
-        
-        self._exposed_functions[name] = {'func': func, 'secure': secure}
+
+        self._exposed_functions[name] = {"func": func, "secure": secure}
         self._exposed_ts_defs[name] = self._get_ts_definition(name, func)
         return func
 
@@ -700,9 +780,11 @@ class App:
         Example: @app.shortcut('Ctrl+Q')
         """
         if func is None:
+
             def decorator(f):
                 self.shortcut(key_combo, f)
                 return f
+
             return decorator
         self.shortcuts[key_combo] = func
         return func
@@ -724,7 +806,7 @@ class App:
         # So _pydantic_models should be populated if they were used in signatures.
         # However, nested models might be missed if we don't recurse properly in _python_type_to_ts.
         # My current _python_type_to_ts does recurse for List/Dict/Union, so it should find them.
-        
+
         # We iterate a copy because generating one interface might discover more models (nested)
         processed_models = set()
         while True:
@@ -732,10 +814,12 @@ class App:
             new_models = current_models - processed_models
             if not new_models:
                 break
-            
+
             for model_name in new_models:
                 model_cls = self._pydantic_models[model_name]
-                ts_lines.append(self._generate_pydantic_interface(model_name, model_cls))
+                ts_lines.append(
+                    self._generate_pydantic_interface(model_name, model_cls)
+                )
                 processed_models.add(model_name)
 
         ts_lines.append("")
@@ -770,22 +854,21 @@ class App:
         for def_str in self._exposed_ts_defs.values():
             ts_lines.append(def_str)
 
-
         # 3. Add Window methods
         # Map exposed name to Window class method name
         win_map = {
-            'minimize': 'minimize',
-            'toggle_maximize': 'toggle_maximize',
-            'close': 'close',
-            'hide': 'hide',
-            'show': 'show',
-            'notify': 'notify',
-            'start_drag': 'start_drag',
-            'set_title': 'set_title',
-            'set_size': 'set_size',
-            'center': 'center',
-            'system_notification': 'system_notification',
-            'set_bounds': 'set_bounds',
+            "minimize": "minimize",
+            "toggle_maximize": "toggle_maximize",
+            "close": "close",
+            "hide": "hide",
+            "show": "show",
+            "notify": "notify",
+            "start_drag": "start_drag",
+            "set_title": "set_title",
+            "set_size": "set_size",
+            "center": "center",
+            "system_notification": "system_notification",
+            "set_bounds": "set_bounds",
         }
         for exposed_name, method_name in win_map.items():
             method = getattr(Webview, method_name, None)
@@ -807,7 +890,9 @@ class App:
             try:
                 os.makedirs(dirname)
             except Exception as e:
-                self.logger.error(f"Failed to create directory for typescript definitions: {e}")
+                self.logger.error(
+                    f"Failed to create directory for typescript definitions: {e}"
+                )
 
         try:
             with open(output_path, "w") as f:

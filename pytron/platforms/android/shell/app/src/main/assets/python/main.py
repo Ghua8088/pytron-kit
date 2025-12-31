@@ -15,12 +15,13 @@ if site_packages not in sys.path:
 
 import _pytron_android
 
+
 # --- HELPER: Send Logs to Android Logcat ---
 def log(msg):
-    _pytron_android.send_to_android(json.dumps({
-        "method": "log",
-        "args": {"message": str(msg)}
-    }))
+    _pytron_android.send_to_android(
+        json.dumps({"method": "log", "args": {"message": str(msg)}})
+    )
+
 
 def main():
     try:
@@ -29,12 +30,12 @@ def main():
         # -----------------------------------------------------
         # 1. FIX SHARED LIBRARIES (Critical for Android)
         # -----------------------------------------------------
-        # (Simplified: We assume your static build is good, 
+        # (Simplified: We assume your static build is good,
         # but adding lib-dynload to path is safe)
         lib_dynload = os.path.join(current_dir, "lib-dynload")
         if os.path.exists(lib_dynload) and lib_dynload not in sys.path:
             sys.path.insert(1, lib_dynload)
-        
+
         # Also check Lib/lib-dynload (standard structure)
         lib_dynload_std = os.path.join(current_dir, "Lib", "lib-dynload")
         if os.path.exists(lib_dynload_std) and lib_dynload_std not in sys.path:
@@ -46,10 +47,10 @@ def main():
         # 2. LAUNCH USER APP (app.py)
         # -----------------------------------------------------
         log(" Launching app.py...")
-        
+
         import app  # <--- THIS IS THE KEY!
-        
-        if hasattr(app, 'main'):
+
+        if hasattr(app, "main"):
             # This will run app.main(), which calls app.expose() and app.run()
             # On Android, app.run() is non-blocking (returns immediately)
             app.main()
@@ -68,12 +69,18 @@ def main():
 
     except Exception as e:
         import traceback
+
         tb = traceback.format_exc()
         log(f" CRASH: {tb}")
-        _pytron_android.send_to_android(json.dumps({
-            "method": "message_box",
-            "args": {"title": "Python Crash", "message": f"{str(e)}\n\n{tb}"}
-        }))
+        _pytron_android.send_to_android(
+            json.dumps(
+                {
+                    "method": "message_box",
+                    "args": {"title": "Python Crash", "message": f"{str(e)}\n\n{tb}"},
+                }
+            )
+        )
+
 
 if __name__ == "__main__":
     main()

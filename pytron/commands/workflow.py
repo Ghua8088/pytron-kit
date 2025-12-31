@@ -1,10 +1,9 @@
-
 import argparse
 import os
 from pathlib import Path
 from ..console import log, console, print_rule
 
-WORKFLOW_TEMPLATE = r'''name: Package App (Multi-Platform)
+WORKFLOW_TEMPLATE = r"""name: Package App (Multi-Platform)
 
 on:
   push:
@@ -54,38 +53,44 @@ jobs:
         with:
           name: pytron-build-${{ matrix.os }}
           path: dist/
-'''
+"""
+
 
 def cmd_workflow(args: argparse.Namespace) -> int:
-    if args.workflow_command == 'init':
+    if args.workflow_command == "init":
         return cmd_workflow_init(args)
     return 0
 
+
 def cmd_workflow_init(args: argparse.Namespace) -> int:
     print_rule("Pytron Workflow Generator")
-    
-    project_root = Path('.').resolve()
-    github_dir = project_root / '.github' / 'workflows'
-    
+
+    project_root = Path(".").resolve()
+    github_dir = project_root / ".github" / "workflows"
+
     if not github_dir.exists():
         log(f"Creating directory: {github_dir}", style="dim")
         github_dir.mkdir(parents=True, exist_ok=True)
-        
-    workflow_file = github_dir / 'package.yml'
-    
-    if workflow_file.exists() and not getattr(args, 'force', False):
+
+    workflow_file = github_dir / "package.yml"
+
+    if workflow_file.exists() and not getattr(args, "force", False):
         log(f"Workflow file already exists at {workflow_file}", style="warning")
         log("Use --force to overwrite.", style="dim")
         return 1
-        
+
     log(f"Generating GitHub Action: {workflow_file}", style="info")
-    workflow_file.write_text(WORKFLOW_TEMPLATE, encoding='utf-8')
-    
+    workflow_file.write_text(WORKFLOW_TEMPLATE, encoding="utf-8")
+
     log("Successfully created multi-platform build workflow!", style="success")
     console.print("\n[bold]Next steps:[/bold]")
-    console.print("1. Commit the new file: [cyan]git add .github/workflows/package.yml[/cyan]")
+    console.print(
+        "1. Commit the new file: [cyan]git add .github/workflows/package.yml[/cyan]"
+    )
     console.print("2. Tag a version: [cyan]git tag v1.0.0[/cyan]")
     console.print("3. Push to GitHub: [cyan]git push origin main --tags[/cyan]")
-    console.print("\nYour app will automatically build for Windows, Linux, and macOS on every tag push!")
-    
+    console.print(
+        "\nYour app will automatically build for Windows, Linux, and macOS on every tag push!"
+    )
+
     return 0

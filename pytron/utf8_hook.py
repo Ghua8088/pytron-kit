@@ -5,6 +5,7 @@ modern Unicode (emoji, CJK, astral-plane characters) on Windows and other
 platforms. It is best-effort and will not crash the application if any step
 fails.
 """
+
 import os
 import sys
 import io
@@ -15,15 +16,15 @@ import logging
 def _set_utf8_mode():
     # Best-effort environment hints for subprocesses and libraries
     try:
-        os.environ.setdefault('PYTHONUTF8', '1')
-        os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
+        os.environ.setdefault("PYTHONUTF8", "1")
+        os.environ.setdefault("PYTHONIOENCODING", "utf-8")
         os.environ.setdefault("LANG", "en_US.UTF-8")
     except Exception:
         pass
 
     # Prefer the user's locale if possible (no-op on failure)
     try:
-        locale.setlocale(locale.LC_ALL, '')
+        locale.setlocale(locale.LC_ALL, "")
     except Exception:
         pass
 
@@ -31,14 +32,16 @@ def _set_utf8_mode():
     # that consult it will prefer UTF-8.
     try:
         import locale as _locale
-        _locale.getpreferredencoding = lambda do_setlocale=False: 'utf-8'
+
+        _locale.getpreferredencoding = lambda do_setlocale=False: "utf-8"
     except Exception:
         pass
 
     # On Windows try to set the console code page to UTF-8 (65001).
-    if sys.platform.startswith('win'):
+    if sys.platform.startswith("win"):
         try:
             import ctypes
+
             kernel32 = ctypes.windll.kernel32
             kernel32.SetConsoleOutputCP(65001)
             kernel32.SetConsoleCP(65001)
@@ -50,12 +53,14 @@ def _set_utf8_mode():
     # code page cannot represent.
     def wrap_stream(stream):
         try:
-            buf = getattr(stream, 'buffer', None)
+            buf = getattr(stream, "buffer", None)
             if buf is not None:
-                return io.TextIOWrapper(buf, encoding='utf-8', errors='surrogatepass', line_buffering=True)
+                return io.TextIOWrapper(
+                    buf, encoding="utf-8", errors="surrogatepass", line_buffering=True
+                )
             # Fallback: try reconfigure (Python 3.7+)
             try:
-                stream.reconfigure(encoding='utf-8', errors='surrogatepass')
+                stream.reconfigure(encoding="utf-8", errors="surrogatepass")
             except Exception:
                 pass
         except Exception:
@@ -80,7 +85,7 @@ def _set_utf8_mode():
         def _patched_init(self, stream=None):
             _orig_init(self, stream=stream)
             try:
-                if getattr(self, 'stream', None) is not None:
+                if getattr(self, "stream", None) is not None:
                     self.stream = wrap_stream(self.stream)
             except Exception:
                 pass

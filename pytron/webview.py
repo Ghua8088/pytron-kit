@@ -18,13 +18,17 @@ from .platforms.windows import WindowsImplementation
 from .platforms.linux import LinuxImplementation
 from .platforms.darwin import DarwinImplementation
 
+
 # -------------------------------------------------------------------
 # Callback handler for dispatch
 # -------------------------------------------------------------------
 def _dispatch_handler(window_ptr, arg_ptr):
     js_code = ctypes.cast(arg_ptr, ctypes.c_char_p).value  # read JS code
     lib.webview_eval(window_ptr, js_code)
+
+
 c_dispatch_handler = dispatch_callback(_dispatch_handler)
+
 
 # -------------------------------------------------------------------
 # Browser wrapper
@@ -33,73 +37,92 @@ class Webview:
     def __init__(self, config):
         self.config = config
         self.logger = logging.getLogger("Pytron.Webview")
-        
-        self.thread_pool = __import__('concurrent.futures').futures.ThreadPoolExecutor(max_workers=5)
-        self._gc_protector = deque(maxlen=50)      
-        self._bound_functions = {} 
-        
+
+        self.thread_pool = __import__("concurrent.futures").futures.ThreadPoolExecutor(
+            max_workers=5
+        )
+        self._gc_protector = deque(maxlen=50)
+        self._bound_functions = {}
+
         # ------------------------------------------------
         # NATIVE ENGINE INITIALIZATION
         # ------------------------------------------------
         self.w = lib.webview_create(int(config.get("debug", False)), None)
         self._cb = c_dispatch_handler
-            
+
         # Default Bindings
         self.bind("pytron_minimize", lambda: self.minimize(), run_in_thread=False)
         self.bind("pytron_close", self.close, run_in_thread=False)
-        self.bind("pytron_toggle_maximize", lambda: self.toggle_maximize(), run_in_thread=False)
+        self.bind(
+            "pytron_toggle_maximize",
+            lambda: self.toggle_maximize(),
+            run_in_thread=False,
+        )
         self.bind("pytron_drag", lambda: self.start_drag(), run_in_thread=False)
         self.bind("pytron_set_title", self.set_title, run_in_thread=False)
         self.bind("pytron_set_size", self.set_size, run_in_thread=False)
         self.bind("pytron_center", self.center, run_in_thread=False)
         self.bind("pytron_set_bounds", self.set_bounds, run_in_thread=False)
-        
+
         # New Daemon bindings
         self.bind("pytron_hide", lambda: self.hide(), run_in_thread=False)
         self.bind("pytron_show", lambda: self.show(), run_in_thread=False)
-        self.bind("pytron_system_notification", self.system_notification, run_in_thread=True)
-        self.bind("pytron_set_taskbar_progress", self.set_taskbar_progress, run_in_thread=True)
+        self.bind(
+            "pytron_system_notification", self.system_notification, run_in_thread=True
+        )
+        self.bind(
+            "pytron_set_taskbar_progress", self.set_taskbar_progress, run_in_thread=True
+        )
         self.bind("pytron_notify", self.notify, run_in_thread=False)
-         
+
         # Dialog bindings
         self.bind("pytron_dialog_open_file", self.dialog_open_file, run_in_thread=True)
         self.bind("pytron_dialog_save_file", self.dialog_save_file, run_in_thread=True)
-        self.bind("pytron_dialog_open_folder", self.dialog_open_folder, run_in_thread=True)
+        self.bind(
+            "pytron_dialog_open_folder", self.dialog_open_folder, run_in_thread=True
+        )
         self.bind("pytron_message_box", self.message_box, run_in_thread=True)
         # Compatibility binding for UI components
         self.bind("get_registered_shortcuts", lambda: [], run_in_thread=False)
 
         # Webview Error Reporting
         self.bind("pytron_report_error", self._report_error, run_in_thread=False)
-        self.bind("pytron_log", lambda msg: self.logger.info(f"Webview Log: {msg}"), run_in_thread=False)
+        self.bind(
+            "pytron_log",
+            lambda msg: self.logger.info(f"Webview Log: {msg}"),
+            run_in_thread=False,
+        )
 
         init_js = """
         console.log("[Pytron] Core Initialized");
         window.pytron = window.pytron || {};
         window.pytron.is_ready = true;
         """
-        
+
         # Disable default context menu if requested in config
         if not config.get("default_context_menu", True):
-            init_js += "\nwindow.addEventListener('contextmenu', e => e.preventDefault());"
-        
-        lib.webview_init(self.w, init_js.encode('utf-8'))
-        
-        
+            init_js += (
+                "\nwindow.addEventListener('contextmenu', e => e.preventDefault());"
+            )
+
+        lib.webview_init(self.w, init_js.encode("utf-8"))
+
         CURRENT_PLATFORM = platform.system()
-        
+
         # Initialize Platform Specifics
         if IS_ANDROID:
             self._platform = PlatformInterface()
             # Android note: Custom schemes usually require Manifest modification or WebViewClient in Java.
             # We skip this for now or need to send intent.
-            self._served_data = {} 
-        
-        else: # Desktop Platforms (Windows, Linux, macOS)
+            self._served_data = {}
+
+        else:  # Desktop Platforms (Windows, Linux, macOS)
             # Define Handler once
             self._served_data = {}
+
             def _scheme_request_handler(url):
-                if not url.startswith("pytron://"): return None, None
+                if not url.startswith("pytron://"):
+                    return None, None
                 parts = url.replace("pytron://", "").split("/", 1)
                 key = parts[0]
                 if key in self._served_data:
@@ -109,45 +132,46 @@ class Webview:
             if CURRENT_PLATFORM == "Windows":
                 self._platform = WindowsImplementation()
                 self._platform.register_pytron_scheme(self.w, _scheme_request_handler)
-                
+
             elif CURRENT_PLATFORM == "Linux":
                 self._platform = LinuxImplementation()
                 self._platform.register_pytron_scheme(self.w, _scheme_request_handler)
-                
+
             elif CURRENT_PLATFORM == "Darwin":
                 self._platform = DarwinImplementation()
                 self._platform.register_pytron_scheme(self.w, _scheme_request_handler)
             else:
                 self.logger.warning(f"Minimal support for {CURRENT_PLATFORM}.")
                 self._platform = PlatformInterface()
-             
-        self.normalize_path(config)    
-        
+
+        self.normalize_path(config)
+
         self.loop = asyncio.new_event_loop()
-        self.frameless=config.get("frameless", False)
-        
+        self.frameless = config.get("frameless", False)
+
         def start_loop():
             asyncio.set_event_loop(self.loop)
             self.loop.run_forever()
+
         t = threading.Thread(target=start_loop, daemon=True)
         t.start()
-        
+
         # Setters
         self.set_title(config.get("title", "Pytron App"))
         width, height = config.get("dimensions", [800, 600])
         self.set_size(width, height)
         if "icon" in config:
-           self.set_icon(config["icon"])
-        
+            self.set_icon(config["icon"])
+
         if self.frameless:
-             self.make_frameless()
-        
+            self.make_frameless()
+
         if config.get("navigate_on_init", True):
             self.navigate(config["url"])
-            
+
     def _return_result(self, seq, status, result_json_str):
-        lib.webview_return(self.w, seq, status, result_json_str.encode('utf-8'))
-    
+        lib.webview_return(self.w, seq, status, result_json_str.encode("utf-8"))
+
     def minimize(self):
         self._platform.minimize(self.w)
 
@@ -176,7 +200,7 @@ class Webview:
 
     def set_size(self, w, h):
         lib.webview_set_size(self.w, w, h, 0)
-    
+
     def hide(self):
         self._platform.hide(self.w)
 
@@ -189,23 +213,27 @@ class Webview:
         self._platform.notification(self.w, title, message, icon)
 
     def set_taskbar_progress(self, state="normal", value=0, max_value=100):
-        if self._platform and hasattr(self._platform, 'set_taskbar_progress'):
-             self._platform.set_taskbar_progress(self.w, state, value, max_value)
+        if self._platform and hasattr(self._platform, "set_taskbar_progress"):
+            self._platform.set_taskbar_progress(self.w, state, value, max_value)
 
     def set_icon(self, icon_path):
         self._platform.set_window_icon(self.w, icon_path)
 
     def center(self):
         """Centers the window on the primary screen."""
-        if self._platform and hasattr(self._platform, 'center'):
-             self._platform.center(self.w)
+        if self._platform and hasattr(self._platform, "center"):
+            self._platform.center(self.w)
 
     # --- Native Dialogs ---
     def dialog_open_file(self, title="Open File", default_path=None, file_types=None):
         return self._platform.open_file_dialog(self.w, title, default_path, file_types)
 
-    def dialog_save_file(self, title="Save File", default_path=None, default_name=None, file_types=None):
-        return self._platform.save_file_dialog(self.w, title, default_path, default_name, file_types)
+    def dialog_save_file(
+        self, title="Save File", default_path=None, default_name=None, file_types=None
+    ):
+        return self._platform.save_file_dialog(
+            self.w, title, default_path, default_name, file_types
+        )
 
     def dialog_open_folder(self, title="Select Folder", default_path=None):
         return self._platform.open_folder_dialog(self.w, title, default_path)
@@ -221,15 +249,15 @@ class Webview:
     def start(self):
         lib.webview_run(self.w)
         lib.webview_destroy(self.w)
-        
-    #-------------------------------------------------------------------
+
+    # -------------------------------------------------------------------
     # Safe JS -> Python Binding
-    #-------------------------------------------------------------------
+    # -------------------------------------------------------------------
     def bind(self, name, python_func, run_in_thread=True, secure=False):
         """
         Exposes a Python function (Sync or Async) to JS.
         """
-        
+
         # Check if the user passed an 'async def'
         is_async = inspect.iscoroutinefunction(python_func)
 
@@ -243,7 +271,7 @@ class Webview:
             except Exception as e:
                 self.logger.error(f"Unexpected error parsing arguments for {name}: {e}")
                 args = []
-            
+
             self.logger.debug(f"Bound function : {name} invoked with args {args}")
 
             # ------------------------------------------------
@@ -252,20 +280,26 @@ class Webview:
             if secure:
                 # 4=MB_YESNO. 6=IDYES
                 confirm = self._platform.message_box(
-                    self.w, 
-                    "Security Alert", 
+                    self.w,
+                    "Security Alert",
                     f"The application is attempting to execute a restricted function: '{name}'.\n\nAllow execution?",
-                    4 
+                    4,
                 )
-                if confirm != 6: # User did not click Yes
-                     self.logger.warning(f"Security: User denied execution of {name}")
-                     lib.webview_return(self.w, seq, 1, json.dumps("User denied execution.").encode('utf-8'))
-                     return
+                if confirm != 6:  # User did not click Yes
+                    self.logger.warning(f"Security: User denied execution of {name}")
+                    lib.webview_return(
+                        self.w,
+                        seq,
+                        1,
+                        json.dumps("User denied execution.").encode("utf-8"),
+                    )
+                    return
 
             # ------------------------------------------------
             # CASE A: ASYNC FUNCTION (Run in Background Loop)
             # ------------------------------------------------
             if is_async:
+
                 async def _async_runner():
                     try:
                         result = await python_func(*args)
@@ -276,11 +310,13 @@ class Webview:
                         self.logger.error(f"Async execution error in {name}: {e}")
                         err_json = json.dumps(str(e))
                         self._return_result(seq, 1, err_json)
+
                 asyncio.run_coroutine_threadsafe(_async_runner(), self.loop)
             # ------------------------------------------------
             # CASE B: SYNC FUNCTION
             # ------------------------------------------------
             else:
+
                 def _sync_runner():
                     try:
                         result = python_func(*args)
@@ -291,17 +327,17 @@ class Webview:
                         self.logger.error(f"Execution error in {name}: {e}")
                         error_msg = json.dumps(str(e))
                         self._return_result(seq, 1, error_msg)
-                
-                if run_in_thread: 
-                     # Run in thread pool 
-                     self.thread_pool.submit(_sync_runner)
+
+                if run_in_thread:
+                    # Run in thread pool
+                    self.thread_pool.submit(_sync_runner)
                 else:
-                     # Run immediately on Main Thread (Required for Window Controls like Drag)
-                     _sync_runner()
+                    # Run immediately on Main Thread (Required for Window Controls like Drag)
+                    _sync_runner()
 
         c_func = BindCallback(_callback)
         self._bound_functions[name] = c_func
-        lib.webview_bind(self.w, name.encode('utf-8'), c_func, None)
+        lib.webview_bind(self.w, name.encode("utf-8"), c_func, None)
 
     def _report_error(self, error_data):
         """
@@ -312,11 +348,12 @@ class Webview:
         line = error_data.get("lineno", "?")
         col = error_data.get("colno", "?")
         stack = error_data.get("stack", "")
-        
+
         err_msg = f"Webview Error: {msg} at {source}:{line}:{col}"
         self.logger.error(err_msg)
         if stack:
             self.logger.error(f"Stack trace:\n{stack}")
+
     # -------------------------------------------------------------------
     # Safe event dispatch to JS
     # -------------------------------------------------------------------
@@ -328,7 +365,7 @@ class Webview:
             f"{{ detail: {payload} }}));"
         )
         self.eval(js_code)
-    
+
     # -------------------------------------------------------------------
     # Notification Helper
     # -------------------------------------------------------------------
@@ -336,12 +373,10 @@ class Webview:
         """
         Sends a notification event to the frontend.
         """
-        self.emit("pytron:notification", {
-            "title": title,
-            "message": message,
-            "type": type,
-            "duration": duration
-        })
+        self.emit(
+            "pytron:notification",
+            {"title": title, "message": message, "type": type, "duration": duration},
+        )
 
     def eval(self, js_code):
         def _thread_send():
@@ -349,11 +384,8 @@ class Webview:
             self._gc_protector.append(js_buf)
             if len(self._gc_protector) > 50:
                 self._gc_protector.pop(0)
-            lib.webview_dispatch(
-                self.w,
-                self._cb,
-                ctypes.cast(js_buf, ctypes.c_void_p)
-            )
+            lib.webview_dispatch(self.w, self._cb, ctypes.cast(js_buf, ctypes.c_void_p))
+
         threading.Thread(target=_thread_send, daemon=True).start()
 
     def serve_data(self, key, data, mime_type="application/octet-stream"):
@@ -361,11 +393,15 @@ class Webview:
         Serves binary data via pytron://<key> for high-performance IPC.
         Data is stored in memory and served via the registered custom scheme handler (O(1)).
         """
-        if hasattr(self, '_served_data'):
+        if hasattr(self, "_served_data"):
             self._served_data[key] = (data, mime_type)
-            self.logger.debug(f"Serving data at pytron://{key} ({len(data)} bytes, {mime_type})")
+            self.logger.debug(
+                f"Serving data at pytron://{key} ({len(data)} bytes, {mime_type})"
+            )
         else:
-            self.logger.warning("serve_data is not supported on this platform/engine configuration.")
+            self.logger.warning(
+                "serve_data is not supported on this platform/engine configuration."
+            )
 
     def expose(self, entity):
         if callable(entity) and not isinstance(entity, type):
@@ -381,41 +417,46 @@ class Webview:
                         self.logger.debug(f"Binding {name}")
                         self.bind(name, attr)
             return entity
+
     def normalize_path(self, config):
         if IS_ANDROID:
             if not config.get("url"):
                 config["url"] = "android://loaded-by-java"
-            config["navigate_on_init"] = False 
+            config["navigate_on_init"] = False
             return
         raw_url = config.get("url")
         if not raw_url:
-            self.logger.error("No URL provided in configuration. Pytron needs a URL or HTML file to load.")
+            self.logger.error(
+                "No URL provided in configuration. Pytron needs a URL or HTML file to load."
+            )
             raise ConfigError("No URL or HTML file specified in configuration.")
-            
+
         if raw_url.startswith(("http://", "https://", "file://")):
-            return 
+            return
         path_obj = pathlib.Path(raw_url)
-        
-        if getattr(sys, 'frozen', False) and not path_obj.is_absolute():
+
+        if getattr(sys, "frozen", False) and not path_obj.is_absolute():
             # Check _MEIPASS (onefile)
-            if hasattr(sys, '_MEIPASS'):
-                 meipass_path = pathlib.Path(sys._MEIPASS) / path_obj
-                 if meipass_path.exists():
-                     path_obj = meipass_path
- 
+            if hasattr(sys, "_MEIPASS"):
+                meipass_path = pathlib.Path(sys._MEIPASS) / path_obj
+                if meipass_path.exists():
+                    path_obj = meipass_path
+
             # Check exe dir (onedir) - only if we haven't found it in MEIPASS
             if not path_obj.exists() or path_obj == pathlib.Path(raw_url):
-                 exe_dir = pathlib.Path(sys.executable).parent
-                 frozen_path = exe_dir / pathlib.Path(raw_url)
-                 if frozen_path.exists():
-                     path_obj = frozen_path
-        
+                exe_dir = pathlib.Path(sys.executable).parent
+                frozen_path = exe_dir / pathlib.Path(raw_url)
+                if frozen_path.exists():
+                    path_obj = frozen_path
+
         if not path_obj.is_absolute():
             path_obj = path_obj.resolve()
         if not path_obj.exists():
             self.logger.error(f"HTML file not found at: {path_obj}")
-            raise ResourceNotFoundError(f"Pytron Error: HTML file not found at: {path_obj}")
- 
+            raise ResourceNotFoundError(
+                f"Pytron Error: HTML file not found at: {path_obj}"
+            )
+
         # Default fallback
         uri = path_obj.as_uri()
         config["url"] = uri

@@ -28,8 +28,9 @@ MIIM_DATA = 0x0020
 MFT_STRING = 0x0000
 MFT_SEPARATOR = 0x0800
 
+
 class NOTIFYICONDATAW(ctypes.Structure):
-    _pack_ = 8 # Force 8-byte packing for x64
+    _pack_ = 8  # Force 8-byte packing for x64
     _fields_ = [
         ("cbSize", ctypes.c_uint),
         ("hWnd", ctypes.c_void_p),
@@ -48,12 +49,19 @@ class NOTIFYICONDATAW(ctypes.Structure):
         ("hBalloonIcon", ctypes.c_void_p),
     ]
 
+
 class MenuItem:
-    def __init__(self, label: str, callback: Optional[Callable] = None, is_separator: bool = False):
+    def __init__(
+        self,
+        label: str,
+        callback: Optional[Callable] = None,
+        is_separator: bool = False,
+    ):
         self.label = label
         self.callback = callback
         self.is_separator = is_separator
         self.id = 0
+
 
 class SystemTray:
     def __init__(self, title: str, icon_path: Optional[str] = None):
@@ -66,7 +74,7 @@ class SystemTray:
         self._running = False
         self._next_id = 1000
         self._thread = None
-        
+
     def add_item(self, label: str, callback: Optional[Callable] = None):
         item = MenuItem(label, callback)
         item.id = self._next_id
@@ -81,62 +89,75 @@ class SystemTray:
 
     def add_quit_item(self, label: str = "Quit", callback: Optional[Callable] = None):
         """Adds a standard Quit item to the tray menu."""
+
         def _quit():
-            if callback: callback()
+            if callback:
+                callback()
             import sys
-            os._exit(0) # Force exit
-            
+
+            os._exit(0)  # Force exit
+
         return self.add_item(label, _quit)
 
     def start(self, app):
         """Starts the tray icon."""
         platform = sys.platform
-        if platform == 'win32':
+        if platform == "win32":
             self._start_windows(app)
-        elif platform == 'darwin':
+        elif platform == "darwin":
             self._start_darwin(app)
-        elif platform == 'linux':
+        elif platform == "linux":
             self._start_linux(app)
         else:
             self.logger.warning(f"System tray not implemented for {platform}")
 
     def stop(self):
         platform = sys.platform
-        if platform == 'win32':
+        if platform == "win32":
             self._stop_windows()
-        elif platform == 'darwin':
-            pass 
-        elif platform == 'linux':
+        elif platform == "darwin":
+            pass
+        elif platform == "linux":
             pass
 
     def _start_darwin(self, app):
         try:
-            from AppKit import NSStatusBar, NSVariableStatusItemLength, NSMenu, NSMenuItem, NSImage
+            from AppKit import (
+                NSStatusBar,
+                NSVariableStatusItemLength,
+                NSMenu,
+                NSMenuItem,
+                NSImage,
+            )
             from PyObjCTools import AppHelper
-            
-            self._status_item = NSStatusBar.systemStatusBar().statusItemWithLength_(NSVariableStatusItemLength)
+
+            self._status_item = NSStatusBar.systemStatusBar().statusItemWithLength_(
+                NSVariableStatusItemLength
+            )
             self._status_item.setToolTip_(self.title)
-            
+
             if self.icon_path:
                 image = NSImage.alloc().initWithContentsOfFile_(self.icon_path)
                 if image:
-                    image.setTemplate_(True) 
+                    image.setTemplate_(True)
                     self._status_item.button().setImage_(image)
-            
+
             if not self._status_item.button().image():
-                 self._status_item.setTitle_(self.title[:3]) 
+                self._status_item.setTitle_(self.title[:3])
 
             # Create Menu
             menu = NSMenu.alloc().init()
-            
+
             class MenuDelegate:
                 def __init__(self, callback):
                     self.callback = callback
-                def call_(self, sender):
-                    if self.callback: self.callback()
 
-            self._delegates = [] 
-            
+                def call_(self, sender):
+                    if self.callback:
+                        self.callback()
+
+            self._delegates = []
+
             for item in self.menu_items:
                 if item.is_separator:
                     menu.addItem_(NSMenuItem.separatorItem())
@@ -148,7 +169,7 @@ class SystemTray:
                     )
                     mi.setTarget_(d)
                     menu.addItem_(mi)
-            
+
             self._status_item.setMenu_(menu)
         except ImportError:
             self.logger.error("macOS Tray requires 'pyobjc-framework-Cocoa'.")
@@ -156,20 +177,21 @@ class SystemTray:
     def _start_linux(self, app):
         try:
             import gi
-            gi.require_version('Gtk', '3.0')
-            gi.require_version('AppIndicator3', '0.1')
+
+            gi.require_version("Gtk", "3.0")
+            gi.require_version("AppIndicator3", "0.1")
             from gi.repository import Gtk, AppIndicator3
-            
+
             ind_id = f"pytron.tray.{id(self)}"
             icon = self.icon_path if self.icon_path else "help-about"
-            
+
             indicator = AppIndicator3.Indicator.new(
                 ind_id, icon, AppIndicator3.IndicatorCategory.APPLICATION_STATUS
             )
             indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
-            
+
             menu = Gtk.Menu()
-            
+
             for item in self.menu_items:
                 if item.is_separator:
                     menu.append(Gtk.SeparatorMenuItem())
@@ -178,29 +200,43 @@ class SystemTray:
                     if item.callback:
                         mi.connect("activate", lambda _: item.callback())
                     menu.append(mi)
-            
+
             menu.show_all()
             indicator.set_menu(menu)
             self._indicator = indicator
-            
+
         except (ImportError, ValueError):
             self.logger.error("Linux Tray requires 'PyGObject' and 'libappindicator3'.")
 
     def _start_windows(self, app):
         # Event to sync creation
         ready_event = threading.Event()
-        
+
         def run_tray_thread():
             user32 = ctypes.windll.user32
             kernel32 = ctypes.windll.kernel32
-            
+
             # --- Definitions ---
-            user32.DefWindowProcW.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.UINT, ctypes.wintypes.WPARAM, ctypes.wintypes.LPARAM]
+            user32.DefWindowProcW.argtypes = [
+                ctypes.wintypes.HWND,
+                ctypes.wintypes.UINT,
+                ctypes.wintypes.WPARAM,
+                ctypes.wintypes.LPARAM,
+            ]
             user32.DefWindowProcW.restype = ctypes.wintypes.LPARAM
             user32.CreateWindowExW.argtypes = [
-                ctypes.c_uint, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint,
-                ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
-                ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p
+                ctypes.c_uint,
+                ctypes.c_wchar_p,
+                ctypes.c_wchar_p,
+                ctypes.c_uint,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
             ]
             user32.CreateWindowExW.restype = ctypes.c_void_p
             ctypes.windll.kernel32.GetModuleHandleW.restype = ctypes.c_void_p
@@ -211,7 +247,7 @@ class SystemTray:
                         app.show()
                     elif lparam == WM_RBUTTONUP:
                         self._show_menu(hwnd)
-                elif msg == 0x0111: # WM_COMMAND
+                elif msg == 0x0111:  # WM_COMMAND
                     item_id = wparam & 0xFFFF
                     for item in self.menu_items:
                         if item.id == item_id and item.callback:
@@ -222,8 +258,14 @@ class SystemTray:
                             break
                 return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
 
-            WNDPROC = ctypes.WINFUNCTYPE(ctypes.wintypes.LPARAM, ctypes.wintypes.HWND, ctypes.wintypes.UINT, ctypes.wintypes.WPARAM, ctypes.wintypes.LPARAM)
-            self._wndproc = WNDPROC(window_proc) # Keep ref to prevent GC
+            WNDPROC = ctypes.WINFUNCTYPE(
+                ctypes.wintypes.LPARAM,
+                ctypes.wintypes.HWND,
+                ctypes.wintypes.UINT,
+                ctypes.wintypes.WPARAM,
+                ctypes.wintypes.LPARAM,
+            )
+            self._wndproc = WNDPROC(window_proc)  # Keep ref to prevent GC
 
             class WNDCLASSW(ctypes.Structure):
                 _fields_ = [
@@ -256,17 +298,23 @@ class SystemTray:
                 LR_LOADFROMFILE = 0x00000010
                 r_path = get_resource_path(self.icon_path)
                 print(f"[Tray] Attempting to load icon from: {r_path}")
-                
+
                 # Load 16x16 for logic
-                self._hicon = user32.LoadImageW(0, str(r_path), IMAGE_ICON, 16, 16, LR_LOADFROMFILE)
-                
+                self._hicon = user32.LoadImageW(
+                    0, str(r_path), IMAGE_ICON, 16, 16, LR_LOADFROMFILE
+                )
+
                 if not self._hicon:
-                     err = ctypes.GetLastError()
-                     print(f"[Tray] Failed to load 16x16 icon. Error: {err}")
-                     # Retry with default size
-                     self._hicon = user32.LoadImageW(0, str(r_path), IMAGE_ICON, 0, 0, LR_LOADFROMFILE)
-                     if not self._hicon:
-                          print(f"[Tray] Failed to load default size icon. Error: {ctypes.GetLastError()}")
+                    err = ctypes.GetLastError()
+                    print(f"[Tray] Failed to load 16x16 icon. Error: {err}")
+                    # Retry with default size
+                    self._hicon = user32.LoadImageW(
+                        0, str(r_path), IMAGE_ICON, 0, 0, LR_LOADFROMFILE
+                    )
+                    if not self._hicon:
+                        print(
+                            f"[Tray] Failed to load default size icon. Error: {ctypes.GetLastError()}"
+                        )
 
             if not self._hicon:
                 print("[Tray] Fallback to system application icon")
@@ -281,9 +329,9 @@ class SystemTray:
             nid.uCallbackMessage = WM_TRAYICON
             nid.hIcon = self._hicon
             nid.szTip = self.title[:127]
-            
+
             ctypes.windll.shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
-            
+
             # Signal that we are ready!
             ready_event.set()
 
@@ -292,24 +340,25 @@ class SystemTray:
             while self._running:
                 # GetMessage blocks until a message arrives
                 res = user32.GetMessageW(ctypes.byref(msg), 0, 0, 0)
-                if res <= 0: break
+                if res <= 0:
+                    break
                 user32.TranslateMessage(ctypes.byref(msg))
                 user32.DispatchMessageW(ctypes.byref(msg))
-                
+
             # Cleanup when loop exits
             if self._hwnd:
-                 user32.DestroyWindow(self._hwnd)
+                user32.DestroyWindow(self._hwnd)
 
         self._running = True
         self._thread = threading.Thread(target=run_tray_thread, daemon=True)
         self._thread.start()
-        
+
         # Wait for tray to appear before returning (prevents race conditions)
         ready_event.wait(timeout=2.0)
 
     def _show_menu(self, hwnd):
         hmenu = ctypes.windll.user32.CreatePopupMenu()
-        
+
         for item in self.menu_items:
             if item.is_separator:
                 ctypes.windll.user32.AppendMenuW(hmenu, MFT_SEPARATOR, 0, None)
@@ -318,18 +367,20 @@ class SystemTray:
 
         pos = ctypes.wintypes.POINT()
         ctypes.windll.user32.GetCursorPos(ctypes.byref(pos))
-        
+
         ctypes.windll.user32.SetForegroundWindow(hwnd)
-        ctypes.windll.user32.TrackPopupMenu(hmenu, TPM_LEFTALIGN | TPM_RIGHTBUTTON, pos.x, pos.y, 0, hwnd, None)
-        ctypes.windll.user32.PostMessageW(hwnd, 0, 0, 0) 
+        ctypes.windll.user32.TrackPopupMenu(
+            hmenu, TPM_LEFTALIGN | TPM_RIGHTBUTTON, pos.x, pos.y, 0, hwnd, None
+        )
+        ctypes.windll.user32.PostMessageW(hwnd, 0, 0, 0)
 
     def _stop_windows(self):
         self._running = False
         if self._hwnd:
-             # Force wake up the message loop to exit?
-             # GetMessage is blocking. We need to post a dummy message or WM_NULL/WM_CLOSE
-             ctypes.windll.user32.PostMessageW(self._hwnd, 0x0010, 0, 0) # WM_CLOSE
-             
+            # Force wake up the message loop to exit?
+            # GetMessage is blocking. We need to post a dummy message or WM_NULL/WM_CLOSE
+            ctypes.windll.user32.PostMessageW(self._hwnd, 0x0010, 0, 0)  # WM_CLOSE
+
         # Also delete icon
         if self._hwnd:
             nid = NOTIFYICONDATAW()

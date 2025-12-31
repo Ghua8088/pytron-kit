@@ -1,4 +1,3 @@
-
 import json
 import logging
 import sys
@@ -10,11 +9,14 @@ try:
 except ImportError:
     _pytron_android = None
 
+
 class AndroidImplementation(PlatformInterface):
     def __init__(self):
         self.logger = logging.getLogger("Pytron.Android")
         if not _pytron_android:
-            self.logger.warning("_pytron_android module not found. This platform implementation requires running inside the Android shell.")
+            self.logger.warning(
+                "_pytron_android module not found. This platform implementation requires running inside the Android shell."
+            )
 
     def _send(self, method, **kwargs):
         """
@@ -71,15 +73,28 @@ class AndroidImplementation(PlatformInterface):
 
     # Dialogs
     def open_file_dialog(self, w, title, default_path=None, file_types=None):
-        res = self._send("open_file_dialog", title=title, default_path=default_path, file_types=file_types)
+        res = self._send(
+            "open_file_dialog",
+            title=title,
+            default_path=default_path,
+            file_types=file_types,
+        )
         if res:
             return json.loads(res)
         return None
 
-    def save_file_dialog(self, w, title, default_path=None, default_name=None, file_types=None):
-        res = self._send("save_file_dialog", title=title, default_path=default_path, default_name=default_name, file_types=file_types)
+    def save_file_dialog(
+        self, w, title, default_path=None, default_name=None, file_types=None
+    ):
+        res = self._send(
+            "save_file_dialog",
+            title=title,
+            default_path=default_path,
+            default_name=default_name,
+            file_types=file_types,
+        )
         if res:
-             return json.loads(res)
+            return json.loads(res)
         return None
 
     def open_folder_dialog(self, w, title, default_path=None):

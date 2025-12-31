@@ -2,6 +2,7 @@ import ctypes
 import ctypes.wintypes
 import os
 import sys
+
 try:
     import winreg
 except ImportError:
@@ -10,15 +11,26 @@ except ImportError:
 from ..bindings import lib
 from .interface import PlatformInterface
 
+
 class WindowsImplementation(PlatformInterface):
     def __init__(self):
         user32 = ctypes.windll.user32
-        
+
         # Prevent 64-bit Overflow
-        user32.SendMessageW.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.UINT, ctypes.wintypes.WPARAM, ctypes.wintypes.LPARAM]
-        user32.PostMessageW.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.UINT, ctypes.wintypes.WPARAM, ctypes.wintypes.LPARAM]
+        user32.SendMessageW.argtypes = [
+            ctypes.wintypes.HWND,
+            ctypes.wintypes.UINT,
+            ctypes.wintypes.WPARAM,
+            ctypes.wintypes.LPARAM,
+        ]
+        user32.PostMessageW.argtypes = [
+            ctypes.wintypes.HWND,
+            ctypes.wintypes.UINT,
+            ctypes.wintypes.WPARAM,
+            ctypes.wintypes.LPARAM,
+        ]
         user32.ShowWindow.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
-        
+
         # Enable High-DPI (Fixes blurry icons)
         try:
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
@@ -45,7 +57,7 @@ class WindowsImplementation(PlatformInterface):
     WM_CLOSE = 0x0010
     SWP_NOZORDER = 0x0004
     SWP_NOACTIVATE = 0x0010
-    
+
     # --- Notification Constants ---
     SW_HIDE = 0
     SW_SHOW = 5
@@ -94,42 +106,47 @@ class WindowsImplementation(PlatformInterface):
         """
         shell32 = ctypes.windll.shell32
         user32 = ctypes.windll.user32
-        
+
         try:
             nid = self.NOTIFYICONDATAW()
             nid.cbSize = ctypes.sizeof(self.NOTIFYICONDATAW)
             nid.hWnd = self._get_hwnd(w)
-            nid.uID = 2000 # Keep ID consistent
-            
+            nid.uID = 2000  # Keep ID consistent
+
             # Flags: Info (Text) + Icon (Tray) + Tip (Hover)
             nid.uFlags = self.NIF_INFO | self.NIF_ICON | self.NIF_TIP
-            
+
             nid.szInfo = message[:255]
             nid.szInfoTitle = title[:63]
             nid.szTip = title[:127] if title else "Notification"
-            nid.dwInfoFlags = self.NIIF_INFO # Standard 'Info' icon in the bubble
+            nid.dwInfoFlags = self.NIIF_INFO  # Standard 'Info' icon in the bubble
 
             # --- Icon Loading Logic ---
             h_icon = 0
             if icon and os.path.exists(icon):
                 # Try loading custom icon
                 h_icon = user32.LoadImageW(
-                    0, str(icon), 1, 16, 16, 0x00000010 # IMAGE_ICON, 16x16, LOADFROMFILE
+                    0,
+                    str(icon),
+                    1,
+                    16,
+                    16,
+                    0x00000010,  # IMAGE_ICON, 16x16, LOADFROMFILE
                 )
-            
+
             if not h_icon:
                 # Fallback to system 'Application' icon
                 h_icon = user32.LoadIconW(0, 32512)
-            
+
             nid.hIcon = h_icon
 
             # 1. Try to ADD
             success = shell32.Shell_NotifyIconW(self.NIM_ADD, ctypes.byref(nid))
-            
+
             # 2. If Add failed (icon likely already there), try MODIFY
             if not success:
                 success = shell32.Shell_NotifyIconW(self.NIM_MODIFY, ctypes.byref(nid))
-            
+
             if not success:
                 err = ctypes.GetLastError()
                 print(f"[Pytron] Notification Failed. Error Code: {err}")
@@ -150,7 +167,15 @@ class WindowsImplementation(PlatformInterface):
 
     def set_bounds(self, w, x, y, width, height):
         hwnd = self._get_hwnd(w)
-        ctypes.windll.user32.SetWindowPos(hwnd, 0, int(x), int(y), int(width), int(height), self.SWP_NOZORDER | self.SWP_NOACTIVATE)
+        ctypes.windll.user32.SetWindowPos(
+            hwnd,
+            0,
+            int(x),
+            int(y),
+            int(width),
+            int(height),
+            self.SWP_NOZORDER | self.SWP_NOACTIVATE,
+        )
 
     def close(self, w):
         hwnd = self._get_hwnd(w)
@@ -161,7 +186,7 @@ class WindowsImplementation(PlatformInterface):
         is_zoomed = ctypes.windll.user32.IsZoomed(hwnd)
         if is_zoomed:
             ctypes.windll.user32.ShowWindow(hwnd, self.SW_RESTORE)
-            return False 
+            return False
         else:
             ctypes.windll.user32.ShowWindow(hwnd, self.SW_MAXIMIZE)
             return True
@@ -171,12 +196,16 @@ class WindowsImplementation(PlatformInterface):
         style = ctypes.windll.user32.GetWindowLongW(hwnd, self.GWL_STYLE)
         style = style & ~self.WS_CAPTION
         ctypes.windll.user32.SetWindowLongW(hwnd, self.GWL_STYLE, style)
-        ctypes.windll.user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0020 | 0x0001 | 0x0002 | 0x0004 | 0x0010)
+        ctypes.windll.user32.SetWindowPos(
+            hwnd, 0, 0, 0, 0, 0, 0x0020 | 0x0001 | 0x0002 | 0x0004 | 0x0010
+        )
 
     def start_drag(self, w):
         hwnd = self._get_hwnd(w)
         ctypes.windll.user32.ReleaseCapture()
-        ctypes.windll.user32.SendMessageW(hwnd, self.WM_NCLBUTTONDOWN, self.HTCAPTION, 0)
+        ctypes.windll.user32.SendMessageW(
+            hwnd, self.WM_NCLBUTTONDOWN, self.HTCAPTION, 0
+        )
 
     def message_box(self, w, title, message, style=0):
         hwnd = self._get_hwnd(w)
@@ -192,19 +221,22 @@ class WindowsImplementation(PlatformInterface):
         ctypes.windll.user32.SetForegroundWindow(hwnd)
 
     def set_window_icon(self, w, icon_path):
-        if not icon_path or not os.path.exists(icon_path): return
+        if not icon_path or not os.path.exists(icon_path):
+            return
         hwnd = self._get_hwnd(w)
-        
+
         # 0x0080 = WM_SETICON, 1 = ICON_BIG, 0 = ICON_SMALL
         try:
             # Small (Titlebar/Taskbar)
-            h_small = ctypes.windll.user32.LoadImageW(0, str(icon_path), 1, 16, 16, 0x10)
-            if h_small: 
+            h_small = ctypes.windll.user32.LoadImageW(
+                0, str(icon_path), 1, 16, 16, 0x10
+            )
+            if h_small:
                 ctypes.windll.user32.SendMessageW(hwnd, 0x0080, 0, h_small)
-            
+
             # Big (Alt-Tab/Task Manager)
             h_big = ctypes.windll.user32.LoadImageW(0, str(icon_path), 1, 32, 32, 0x10)
-            if h_big: 
+            if h_big:
                 ctypes.windll.user32.SendMessageW(hwnd, 0x0080, 1, h_big)
         except Exception as e:
             print(f"Icon error: {e}")
@@ -246,51 +278,63 @@ class WindowsImplementation(PlatformInterface):
         ofn = self.OPENFILENAMEW()
         ofn.lStructSize = ctypes.sizeof(self.OPENFILENAMEW)
         ofn.hwndOwner = self._get_hwnd(w)
-        
+
         # Buffer for file name
         buff = ctypes.create_unicode_buffer(file_buffer_size)
         ofn.lpstrFile = ctypes.addressof(buff)
         ofn.nMaxFile = file_buffer_size
-        
+
         if title:
             ofn.lpstrTitle = title
 
         if default_path:
             if os.path.isfile(default_path):
-                 d = os.path.dirname(default_path)
-                 n = os.path.basename(default_path)
-                 ofn.lpstrInitialDir = d
-                 buff.value = n
+                d = os.path.dirname(default_path)
+                n = os.path.basename(default_path)
+                ofn.lpstrInitialDir = d
+                buff.value = n
             else:
-                 ofn.lpstrInitialDir = default_path
-        
+                ofn.lpstrInitialDir = default_path
+
         if not file_types:
             file_types = "All Files (*.*)|*.*"
-            
+
         filter_str = file_types.replace("|", "\0") + "\0"
         ofn.lpstrFilter = filter_str
-        
+
         return ofn, buff
 
     def open_file_dialog(self, w, title, default_path=None, file_types=None):
         ofn, buff = self._prepare_ofn(w, title, default_path, file_types)
-        ofn.Flags = self.OFN_EXPLORER | self.OFN_FILEMUSTEXIST | self.OFN_PATHMUSTEXIST | self.OFN_NOCHANGEDIR
-        
+        ofn.Flags = (
+            self.OFN_EXPLORER
+            | self.OFN_FILEMUSTEXIST
+            | self.OFN_PATHMUSTEXIST
+            | self.OFN_NOCHANGEDIR
+        )
+
         if ctypes.windll.comdlg32.GetOpenFileNameW(ctypes.byref(ofn)):
             return buff.value
         return None
 
-    def save_file_dialog(self, w, title, default_path=None, default_name=None, file_types=None):
+    def save_file_dialog(
+        self, w, title, default_path=None, default_name=None, file_types=None
+    ):
         path = default_path
         if default_name:
-             if path:
-                 path = os.path.join(path, default_name)
-             else:
-                 path = default_name
-        
+            if path:
+                path = os.path.join(path, default_name)
+            else:
+                path = default_name
+
         ofn, buff = self._prepare_ofn(w, title, path, file_types)
-        ofn.Flags = self.OFN_EXPLORER | self.OFN_OVERWRITEPROMPT | self.OFN_PATHMUSTEXIST | self.OFN_NOCHANGEDIR
-        
+        ofn.Flags = (
+            self.OFN_EXPLORER
+            | self.OFN_OVERWRITEPROMPT
+            | self.OFN_PATHMUSTEXIST
+            | self.OFN_NOCHANGEDIR
+        )
+
         if ctypes.windll.comdlg32.GetSaveFileNameW(ctypes.byref(ofn)):
             return buff.value
         return None
@@ -307,6 +351,7 @@ class WindowsImplementation(PlatformInterface):
             ("lParam", ctypes.c_long),
             ("iImage", ctypes.c_int),
         ]
+
     BIF_RETURNONLYFSDIRS = 0x00000001
     BIF_NEWDIALOGSTYLE = 0x00000040
 
@@ -315,7 +360,7 @@ class WindowsImplementation(PlatformInterface):
         bif.hwndOwner = self._get_hwnd(w)
         bif.lpszTitle = title
         bif.ulFlags = self.BIF_RETURNONLYFSDIRS | self.BIF_NEWDIALOGSTYLE
-        
+
         pidl = ctypes.windll.shell32.SHBrowseForFolderW(ctypes.byref(bif))
         if pidl:
             path = ctypes.create_unicode_buffer(260)
@@ -327,17 +372,20 @@ class WindowsImplementation(PlatformInterface):
 
     # --- Custom Protocol for App Launch ---
     def register_protocol(self, scheme):
-        if not winreg: return False
+        if not winreg:
+            return False
         try:
             exe = sys.executable
-            if not getattr(sys, 'frozen', False):
-                 pass
+            if not getattr(sys, "frozen", False):
+                pass
             command = f'"{exe}" "%1"'
             key_path = f"Software\\Classes\\{scheme}"
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
                 winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f"URL:{scheme} Protocol")
                 winreg.SetValueEx(key, "URL Protocol", 0, winreg.REG_SZ, "")
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"{key_path}\\shell\\open\\command") as key:
+            with winreg.CreateKey(
+                winreg.HKEY_CURRENT_USER, f"{key_path}\\shell\\open\\command"
+            ) as key:
                 winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
             return True
         except Exception:
@@ -349,19 +397,24 @@ class WindowsImplementation(PlatformInterface):
     TBPF_NORMAL = 0x2
     TBPF_ERROR = 0x4
     TBPF_PAUSED = 0x8
-    
-    _taskbar_list = None 
-    
+
+    _taskbar_list = None
+
     def _init_taskbar(self):
-        if self._taskbar_list: return self._taskbar_list
+        if self._taskbar_list:
+            return self._taskbar_list
         try:
             try:
                 ctypes.windll.ole32.CoInitialize(0)
-            except: pass
-            
+            except:
+                pass
+
             CLSID_TaskbarList = "{56FDF344-FD6D-11d0-958A-006097C9A090}"
             import comtypes.client
-            self._taskbar_list = comtypes.client.CreateObject(CLSID_TaskbarList, interface=comtypes.gen.TaskbarLib.ITaskbarList3)
+
+            self._taskbar_list = comtypes.client.CreateObject(
+                CLSID_TaskbarList, interface=comtypes.gen.TaskbarLib.ITaskbarList3
+            )
             self._taskbar_list.HrInit()
             return self._taskbar_list
         except Exception:
@@ -370,15 +423,20 @@ class WindowsImplementation(PlatformInterface):
     def set_taskbar_progress(self, w, state="normal", value=0, max_value=100):
         try:
             tbl = self._init_taskbar()
-            if not tbl: return
+            if not tbl:
+                return
             hwnd = self._get_hwnd(w)
             flags = self.TBPF_NOPROGRESS
-            if state == 'indeterminate': flags = self.TBPF_INDETERMINATE
-            elif state == 'normal': flags = self.TBPF_NORMAL
-            elif state == 'error': flags = self.TBPF_ERROR
-            elif state == 'paused': flags = self.TBPF_PAUSED
+            if state == "indeterminate":
+                flags = self.TBPF_INDETERMINATE
+            elif state == "normal":
+                flags = self.TBPF_NORMAL
+            elif state == "error":
+                flags = self.TBPF_ERROR
+            elif state == "paused":
+                flags = self.TBPF_PAUSED
             tbl.SetProgressState(hwnd, flags)
-            if state in ('normal', 'error', 'paused'):
+            if state in ("normal", "error", "paused"):
                 tbl.SetProgressValue(hwnd, int(value), int(max_value))
         except Exception:
             pass
@@ -387,7 +445,7 @@ class WindowsImplementation(PlatformInterface):
         try:
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
         except Exception:
-            pass 
+            pass
 
     def center(self, w):
         hwnd = self._get_hwnd(w)
@@ -403,10 +461,16 @@ class WindowsImplementation(PlatformInterface):
         ctypes.windll.user32.SetWindowPos(hwnd, 0, x, y, 0, 0, 0x0001)
 
     def set_launch_on_boot(self, app_name, exe_path, enable=True):
-        if not winreg: return False
+        if not winreg:
+            return False
         key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
         try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE | winreg.KEY_QUERY_VALUE) as key:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                key_path,
+                0,
+                winreg.KEY_SET_VALUE | winreg.KEY_QUERY_VALUE,
+            ) as key:
                 if enable:
                     winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
                 else:
@@ -429,21 +493,45 @@ class WindowsImplementation(PlatformInterface):
             import comtypes.client
             from comtypes import GUID, IUnknown, HRESULT, COMMETHOD, POINTER
             from ctypes import cast, c_void_p, c_int, byref, c_ulonglong
-            
+
             # 1. Define Minimum Required Interfaces (since we don't assume TLB availability)
-            
+
             class IStream(IUnknown):
                 _iid_ = GUID("{0000000c-0000-0000-C000-000000000046}")
                 _methods_ = [
-                    COMMETHOD([], HRESULT, "Read", (['out'], c_void_p, "pv"), (['in'], c_int, "cb"), (['out'], POINTER(c_ulonglong), "pcbRead")),
-                    COMMETHOD([], HRESULT, "Write", (['in'], c_void_p, "pv"), (['in'], c_int, "cb"), (['out'], POINTER(c_ulonglong), "pcbWritten")),
+                    COMMETHOD(
+                        [],
+                        HRESULT,
+                        "Read",
+                        (["out"], c_void_p, "pv"),
+                        (["in"], c_int, "cb"),
+                        (["out"], POINTER(c_ulonglong), "pcbRead"),
+                    ),
+                    COMMETHOD(
+                        [],
+                        HRESULT,
+                        "Write",
+                        (["in"], c_void_p, "pv"),
+                        (["in"], c_int, "cb"),
+                        (["out"], POINTER(c_ulonglong), "pcbWritten"),
+                    ),
                 ]
 
             class ICoreWebView2WebResourceRequest(IUnknown):
                 _iid_ = GUID("{97055CD4-512C-4264-8B5F-E3F446EA0C59}")
                 _methods_ = [
-                    COMMETHOD([], HRESULT, "get_Uri", (['out'], POINTER(ctypes.c_wchar_p), "uri")),
-                    COMMETHOD([], HRESULT, "get_Method", (['out'], POINTER(ctypes.c_wchar_p), "method")),
+                    COMMETHOD(
+                        [],
+                        HRESULT,
+                        "get_Uri",
+                        (["out"], POINTER(ctypes.c_wchar_p), "uri"),
+                    ),
+                    COMMETHOD(
+                        [],
+                        HRESULT,
+                        "get_Method",
+                        (["out"], POINTER(ctypes.c_wchar_p), "method"),
+                    ),
                 ]
 
             class ICoreWebView2WebResourceResponse(IUnknown):
@@ -453,23 +541,61 @@ class WindowsImplementation(PlatformInterface):
             class ICoreWebView2WebResourceRequestedEventArgs(IUnknown):
                 _iid_ = GUID("{453E667F-12C7-49D4-BE6D-DDBE7956A57A}")
                 _methods_ = [
-                    COMMETHOD([], HRESULT, "get_Request", (['out'], POINTER(POINTER(ICoreWebView2WebResourceRequest)), "request")),
-                    COMMETHOD([], HRESULT, "get_Response", (['out'], POINTER(POINTER(ICoreWebView2WebResourceResponse)), "response")),
-                    COMMETHOD([], HRESULT, "put_Response", (['in'], POINTER(ICoreWebView2WebResourceResponse), "response")),
-                    COMMETHOD([], HRESULT, "GetDeferral", (['out'], POINTER(c_void_p), "deferral")),
+                    COMMETHOD(
+                        [],
+                        HRESULT,
+                        "get_Request",
+                        (
+                            ["out"],
+                            POINTER(POINTER(ICoreWebView2WebResourceRequest)),
+                            "request",
+                        ),
+                    ),
+                    COMMETHOD(
+                        [],
+                        HRESULT,
+                        "get_Response",
+                        (
+                            ["out"],
+                            POINTER(POINTER(ICoreWebView2WebResourceResponse)),
+                            "response",
+                        ),
+                    ),
+                    COMMETHOD(
+                        [],
+                        HRESULT,
+                        "put_Response",
+                        (["in"], POINTER(ICoreWebView2WebResourceResponse), "response"),
+                    ),
+                    COMMETHOD(
+                        [],
+                        HRESULT,
+                        "GetDeferral",
+                        (["out"], POINTER(c_void_p), "deferral"),
+                    ),
                 ]
 
             class ICoreWebView2WebResourceRequestedEventHandler(IUnknown):
                 _iid_ = GUID("{D603F230-081A-4927-94BC-9F8E32D33D3B}")
                 _methods_ = [
-                    COMMETHOD([], HRESULT, "Invoke", (['in'], POINTER(IUnknown), "sender"), (['in'], POINTER(ICoreWebView2WebResourceRequestedEventArgs), "args")),
+                    COMMETHOD(
+                        [],
+                        HRESULT,
+                        "Invoke",
+                        (["in"], POINTER(IUnknown), "sender"),
+                        (
+                            ["in"],
+                            POINTER(ICoreWebView2WebResourceRequestedEventArgs),
+                            "args",
+                        ),
+                    ),
                 ]
 
             # Simplified Environment to Create Response
             class ICoreWebView2Environment(IUnknown):
                 _iid_ = GUID("{B96D755E-0319-4E92-A296-23436F46A1FC}")
                 # We need CreateWebResourceResponse which is index 8 (0-based) ??
-                # VTable order: 
+                # VTable order:
                 # QueryInterface, AddRef, Release (3)
                 # CreateCoreWebView2Controller (3)
                 # CreateWebResourceResponse (1)
@@ -477,8 +603,27 @@ class WindowsImplementation(PlatformInterface):
                 # Let's rely on name if comtypes allows, or dynamic
                 # We will define it properly:
                 _methods_ = [
-                     COMMETHOD([], HRESULT, "CreateCoreWebView2Controller", (['in'], c_void_p, "ParentWindow"), (['in'], c_void_p, "handler")),
-                     COMMETHOD([], HRESULT, "CreateWebResourceResponse", (['in'], POINTER(IStream), "Content"), (['in'], c_int, "StatusCode"), (['in'], ctypes.c_wchar_p, "ReasonPhrase"), (['in'], ctypes.c_wchar_p, "Headers"), (['out'], POINTER(POINTER(ICoreWebView2WebResourceResponse)), "Response")),
+                    COMMETHOD(
+                        [],
+                        HRESULT,
+                        "CreateCoreWebView2Controller",
+                        (["in"], c_void_p, "ParentWindow"),
+                        (["in"], c_void_p, "handler"),
+                    ),
+                    COMMETHOD(
+                        [],
+                        HRESULT,
+                        "CreateWebResourceResponse",
+                        (["in"], POINTER(IStream), "Content"),
+                        (["in"], c_int, "StatusCode"),
+                        (["in"], ctypes.c_wchar_p, "ReasonPhrase"),
+                        (["in"], ctypes.c_wchar_p, "Headers"),
+                        (
+                            ["out"],
+                            POINTER(POINTER(ICoreWebView2WebResourceResponse)),
+                            "Response",
+                        ),
+                    ),
                 ]
 
             # Simplified WebView2
@@ -490,12 +635,13 @@ class WindowsImplementation(PlatformInterface):
                 # ...
                 # add_WebResourceRequested is usually around index 16.
                 pass
-            
+
             # --- Implementation Logic ---
-            
+
             # 2. Handler Implementation
             class Handler(comtypes.COMObject):
                 _com_interfaces_ = [ICoreWebView2WebResourceRequestedEventHandler]
+
                 def __init__(self, env):
                     self.env = env
                     super().__init__()
@@ -508,65 +654,75 @@ class WindowsImplementation(PlatformInterface):
                         uri = ctypes.c_wchar_p()
                         req.get_Uri(byref(uri))
                         url_str = uri.value
-                        
+
                         if url_str and url_str.startswith("pytron://"):
-                             # Call Python Callback
-                             data, mime = callback(url_str)
-                             if data:
-                                 # Create IStream from data
-                                 # We use shlwapi SHCreateMemStream
-                                 shlwapi = ctypes.windll.shlwapi
-                                 shlwapi.SHCreateMemStream.restype = POINTER(IStream)
-                                 shlwapi.SHCreateMemStream.argtypes = [ctypes.c_char_p, ctypes.c_uint]
-                                 
-                                 stream = shlwapi.SHCreateMemStream(data, len(data))
-                                 
-                                 resp = POINTER(ICoreWebView2WebResourceResponse)()
-                                 # Set Headers to allow CORS (fetch/xhr)
-                                 header_str = f"Content-Type: {mime}\nAccess-Control-Allow-Origin: *"
-                                 self.env.CreateWebResourceResponse(stream, 200, "OK", header_str, byref(resp))
-                                 
-                                 args.put_Response(resp)
+                            # Call Python Callback
+                            data, mime = callback(url_str)
+                            if data:
+                                # Create IStream from data
+                                # We use shlwapi SHCreateMemStream
+                                shlwapi = ctypes.windll.shlwapi
+                                shlwapi.SHCreateMemStream.restype = POINTER(IStream)
+                                shlwapi.SHCreateMemStream.argtypes = [
+                                    ctypes.c_char_p,
+                                    ctypes.c_uint,
+                                ]
+
+                                stream = shlwapi.SHCreateMemStream(data, len(data))
+
+                                resp = POINTER(ICoreWebView2WebResourceResponse)()
+                                # Set Headers to allow CORS (fetch/xhr)
+                                header_str = f"Content-Type: {mime}\nAccess-Control-Allow-Origin: *"
+                                self.env.CreateWebResourceResponse(
+                                    stream, 200, "OK", header_str, byref(resp)
+                                )
+
+                                args.put_Response(resp)
                     except Exception as e:
                         print(f"Pytron Scheme Error: {e}")
-                    return 0 # S_OK
+                    return 0  # S_OK
 
             # 3. Locate ICoreWebView2* and Environment
             # We assume layout: vtbl(8) + HWND(8) + Env*(8) + Controller*(8) + WebView*(8)
             # This is heuristics based on zserge/webview implementation
-            
-            base_addr = w.value if hasattr(w, 'value') else w
-            if not base_addr: return False
-            
+
+            base_addr = w.value if hasattr(w, "value") else w
+            if not base_addr:
+                return False
+
             # Try to read members
             # We need to find valid pointers.
             # pointer_size = 8
-            
+
             # Check Env
             env_ptr_val = ctypes.c_void_p.from_address(base_addr + 16).value
-            if not env_ptr_val: return False
+            if not env_ptr_val:
+                return False
             env = cast(env_ptr_val, POINTER(ICoreWebView2Environment))
-            self._webview_env = env # Keep alive
+            self._webview_env = env  # Keep alive
 
             # Check WebView
-            wv_ptr_val = ctypes.c_void_p.from_address(base_addr + 32).value # 32 seems more likely for webview* in standard layout
-            if not wv_ptr_val: 
+            wv_ptr_val = ctypes.c_void_p.from_address(
+                base_addr + 32
+            ).value  # 32 seems more likely for webview* in standard layout
+            if not wv_ptr_val:
                 # Try 24
                 wv_ptr_val = ctypes.c_void_p.from_address(base_addr + 24).value
-            
-            if not wv_ptr_val: return False
-            
+
+            if not wv_ptr_val:
+                return False
+
             # We have the pointer, but we need to call methods dynamically because we don't have exact VTABLE definition
             # ICoreWebView2::AddWebResourceRequestedFilter (Method 66??)
             # ICoreWebView2::add_WebResourceRequested (Method 64??)
-            
+
             # We can use comtypes to Bind dynamically if TypeInfo was available, but it's not.
             # We will use manual VTable binding via ctypes, assuming standard offsets.
             # add_WebResourceRequested is offset: 16
             # AddWebResourceRequestedFilter is offset: 62 or something
-            
+
             # Actually, let's look at `comtypes.client.GetModule` if possible? No.
-            
+
             # HACK: Retrieve VTABLE and call by index
             # This requires knowing index.
             # ICoreWebView2:
@@ -574,47 +730,54 @@ class WindowsImplementation(PlatformInterface):
             # 64: add_WebResourceRequested
             # 66: AddWebResourceRequestedFilter
             # (Based on SDK analysis)
-            
+
             wv_obj = cast(wv_ptr_val, POINTER(ICoreWebView2))
-            
+
             # Setup Handler
             handler = Handler(env)
             # Keep handler alive
-            self._protocol_handler = handler 
+            self._protocol_handler = handler
 
             # Define Ftypes
-            AddFilterProto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, ctypes.c_wchar_p, c_int)
-            AddHandlerProto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, POINTER(ICoreWebView2WebResourceRequestedEventHandler), POINTER(c_ulonglong))
-            
+            AddFilterProto = ctypes.WINFUNCTYPE(
+                HRESULT, c_void_p, ctypes.c_wchar_p, c_int
+            )
+            AddHandlerProto = ctypes.WINFUNCTYPE(
+                HRESULT,
+                c_void_p,
+                POINTER(ICoreWebView2WebResourceRequestedEventHandler),
+                POINTER(c_ulonglong),
+            )
+
             vtable = cast(wv_obj, POINTER(c_void_p))[0]
-            
+
             # AddWebResourceRequestedFilter
-            # The User wants implementation "using ctypes". 
-            # I am doing exactly that. 
+            # The User wants implementation "using ctypes".
+            # I am doing exactly that.
             # Indexes for ICoreWebView2 (Interface 76741B9C...):
             # ...
             # 64: add_WebResourceRequested
             # 65: remove_WebResourceRequested
             # 66: AddWebResourceRequestedFilter (Added in 1.0.774.44)
             # 67: remove_WebResourceRequestedFilter
-            
+
             add_filter_addr = cast(vtable + (66 * 8), POINTER(c_void_p))[0]
             add_filter = AddFilterProto(add_filter_addr)
-            
+
             add_handler_addr = cast(vtable + (64 * 8), POINTER(c_void_p))[0]
             add_handler = AddHandlerProto(add_handler_addr)
-            
+
             # Register Filter
             # COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL = 0
             add_filter(wv_ptr_val, "pytron://*", 0)
-            
+
             # Add Handler
             token = c_ulonglong()
             add_handler(wv_ptr_val, handler, byref(token))
-            
+
             print("[Pytron] O(1) Protocol Handler Registered Successfully.")
             return True
-            
+
         except Exception as e:
             print(f"[Pytron] Failed to register O(1) scheme handler: {e}")
             return False
