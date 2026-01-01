@@ -2,6 +2,8 @@
 # Pytron Kit
 
 [![PyPI Version](https://img.shields.io/pypi/v/pytron-kit.svg)](https://pypi.org/project/pytron-kit/)
+[![Downloads](https://img.shields.io/pypi/dm/pytron-kit.svg)](https://pypi.org/project/pytron-kit/)
+[![License](https://img.shields.io/pypi/l/pytron-kit.svg)](https://pypi.org/project/pytron-kit/)
 [![GitHub](https://img.shields.io/badge/github-repo-000000?logo=github)](https://github.com/Ghua8088/pytron)
 [![Website](https://img.shields.io/badge/official-website-blue)](https://pytron-kit.github.io/)
 [![Tests](https://github.com/Ghua8088/pytron/actions/workflows/tests.yml/badge.svg)](https://github.com/Ghua8088/pytron/actions)
@@ -368,4 +370,4 @@ PyInstaller doesn't support true cross-compilation. To build for other platforms
 - [Code of Conduct](CODE_OF_CONDUCT.md): Standards for community behavior.
 
 ## License
-Pytron is licensed under the [MIT License](LICENSE).
+Pytron is licensed under the [Apache License 2.0](LICENSE).
