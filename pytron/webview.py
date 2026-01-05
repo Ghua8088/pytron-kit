@@ -11,12 +11,10 @@ from collections import deque
 import logging
 import os
 from .bindings import lib, dispatch_callback, BindCallback, IS_ANDROID
+import base64
 from .serializer import pytron_serialize
 from .exceptions import ResourceNotFoundError, BridgeError, ConfigError
 from .platforms.interface import PlatformInterface
-from .platforms.windows import WindowsImplementation
-from .platforms.linux import LinuxImplementation
-from .platforms.darwin import DarwinImplementation
 
 
 # -------------------------------------------------------------------
@@ -43,6 +41,7 @@ class Webview:
         )
         self._gc_protector = deque(maxlen=50)
         self._bound_functions = {}
+        self._served_data = {}
 
         # ------------------------------------------------
         # NATIVE ENGINE INITIALIZATION
@@ -86,12 +85,18 @@ class Webview:
         self.bind("get_registered_shortcuts", lambda: [], run_in_thread=False)
 
         # Webview Error Reporting
-        self.bind("pytron_report_error", self._report_error, run_in_thread=False)
-        self.bind(
-            "pytron_log",
-            lambda msg: self.logger.info(f"Webview Log: {msg}"),
-            run_in_thread=False,
-        )
+        self.bind("pytron_log", lambda msg: self.logger.info(f"Webview Log: {msg}"), run_in_thread=False)
+        
+        # Robust Asset Provider
+        def _get_asset(key):
+            if key in self._served_data:
+                data, mime = self._served_data[key]
+                # Convert to Data URI for seamless JS handling
+                b64 = base64.b64encode(data).decode('utf-8')
+                return {"data": f"data:{mime};base64,{b64}", "mime": mime}
+            return None
+
+        self.bind("pytron_get_asset", _get_asset, run_in_thread=True)
 
         init_js = """
         console.log("[Pytron] Core Initialized");
@@ -108,41 +113,32 @@ class Webview:
         lib.webview_init(self.w, init_js.encode("utf-8"))
 
         CURRENT_PLATFORM = platform.system()
-
-        # Initialize Platform Specifics
-        if IS_ANDROID:
-            self._platform = PlatformInterface()
-            # Android note: Custom schemes usually require Manifest modification or WebViewClient in Java.
-            # We skip this for now or need to send intent.
-            self._served_data = {}
-
-        else:  # Desktop Platforms (Windows, Linux, macOS)
-            # Define Handler once
-            self._served_data = {}
-
-            def _scheme_request_handler(url):
-                if not url.startswith("pytron://"):
-                    return None, None
-                parts = url.replace("pytron://", "").split("/", 1)
-                key = parts[0]
-                if key in self._served_data:
-                    return self._served_data[key]
-                return None, None
-
-            if CURRENT_PLATFORM == "Windows":
-                self._platform = WindowsImplementation()
-                self._platform.register_pytron_scheme(self.w, _scheme_request_handler)
-
-            elif CURRENT_PLATFORM == "Linux":
-                self._platform = LinuxImplementation()
-                self._platform.register_pytron_scheme(self.w, _scheme_request_handler)
-
-            elif CURRENT_PLATFORM == "Darwin":
-                self._platform = DarwinImplementation()
-                self._platform.register_pytron_scheme(self.w, _scheme_request_handler)
+        # self._served_data = {} # Removed: initialized earlier
+        
+        # Resolve App Root for reliable relative pathing
+        if getattr(sys, "frozen", False):
+            self._app_root = pathlib.Path(sys.executable).parent
+            if hasattr(sys, "_MEIPASS"):
+                self._app_root = pathlib.Path(sys._MEIPASS)
+        else:
+            main_script = sys.modules['__main__'].__file__ if '__main__' in sys.modules and hasattr(sys.modules['__main__'], '__file__') else None
+            if main_script:
+                self._app_root = pathlib.Path(main_script).parent
             else:
-                self.logger.warning(f"Minimal support for {CURRENT_PLATFORM}.")
-                self._platform = PlatformInterface()
+                self._app_root = pathlib.Path.cwd()
+
+        self._platform = PlatformInterface()
+
+        if not IS_ANDROID:
+            if CURRENT_PLATFORM == "Windows":
+                from .platforms.windows import WindowsImplementation
+                self._platform = WindowsImplementation()
+            elif CURRENT_PLATFORM == "Linux":
+                from .platforms.linux import LinuxImplementation
+                self._platform = LinuxImplementation()
+            elif CURRENT_PLATFORM == "Darwin":
+                from .platforms.darwin import DarwinImplementation
+                self._platform = DarwinImplementation()
 
         self.normalize_path(config)
 
@@ -244,6 +240,23 @@ class Webview:
         return self._platform.message_box(self.w, title, message, style)
 
     def navigate(self, url):
+        if url.startswith("pytron://"):
+            key = url.replace("pytron://", "").split("?")[0].split("#")[0]
+            if key in self._served_data:
+                data, mime = self._served_data[key]
+                if "text/html" in mime:
+                    try:
+                        html_content = data.decode("utf-8")
+                        lib.webview_set_html(self.w, html_content.encode("utf-8"))
+                        return
+                    except Exception as e:
+                        self.logger.error(f"Failed to decode pytron:// asset as HTML: {e}")
+            
+            # If not found or not HTML, we can't 'navigate' to it natively anymore.
+            # We log a warning.
+            self.logger.warning(f"Native navigation to {url} is no longer supported. Use fetch() or relative file paths.")
+            return
+
         lib.webview_navigate(self.w, url.encode("utf-8"))
 
     def start(self):
@@ -442,15 +455,21 @@ class Webview:
                 if meipass_path.exists():
                     path_obj = meipass_path
 
-            # Check exe dir (onedir) - only if we haven't found it in MEIPASS
-            if not path_obj.exists() or path_obj == pathlib.Path(raw_url):
+            # Check exe dir (onedir)
+            if not path_obj.is_absolute() or not path_obj.exists():
                 exe_dir = pathlib.Path(sys.executable).parent
-                frozen_path = exe_dir / pathlib.Path(raw_url)
-                if frozen_path.exists():
-                    path_obj = frozen_path
+                frozen_candidate = exe_dir / path_obj
+                if frozen_candidate.exists():
+                    path_obj = frozen_candidate
 
         if not path_obj.is_absolute():
-            path_obj = path_obj.resolve()
+            # Try resolving relative to self._app_root first
+            app_rel_path = self._app_root / path_obj
+            if app_rel_path.exists():
+                path_obj = app_rel_path
+            else:
+                path_obj = path_obj.resolve()
+        
         if not path_obj.exists():
             self.logger.error(f"HTML file not found at: {path_obj}")
             raise ResourceNotFoundError(

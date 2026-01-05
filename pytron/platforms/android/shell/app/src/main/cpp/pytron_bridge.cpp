@@ -60,7 +60,7 @@ PyMODINIT_FUNC PyInit__pytron_android(void) {
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_pytron_android_MainActivity_startPython(JNIEnv* env, jobject thiz, jstring homePath) {
+Java_com_pytron_shell_MainActivity_startPython(JNIEnv* env, jobject thiz, jstring homePath) {
     if (gMainActivity) env->DeleteGlobalRef(gMainActivity);
     gMainActivity = env->NewGlobalRef(thiz);
 
@@ -187,7 +187,7 @@ Java_com_pytron_android_MainActivity_startPython(JNIEnv* env, jobject thiz, jstr
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_pytron_android_MainActivity_sendToPython(JNIEnv* env, jobject thiz, jstring message) {
+Java_com_pytron_shell_MainActivity_sendToPython(JNIEnv* env, jobject thiz, jstring message) {
     if (!Py_IsInitialized()) return;
     PyGILState_STATE gstate = PyGILState_Ensure();
     const char* msg = env->GetStringUTFChars(message, 0);

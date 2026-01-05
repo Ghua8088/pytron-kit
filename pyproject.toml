@@ -13,7 +13,7 @@ version = "0.3.1"
 description = "An Electron-like library for Python to build Cross Platform Apps"
 readme = "README.md"
 requires-python = ">=3.7"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 keywords = ["electron", "app", "desktop", "android", "webview"]
 authors = [
   { name = "Ghua8088" }
@@ -30,11 +30,12 @@ dependencies = [
   "rich",
   "lief",
   "nuitka",
-  "zstandard"
+  "zstandard",
+  "comtypes; sys_platform == 'win32'"
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
 ]
 

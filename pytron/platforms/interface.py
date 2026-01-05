@@ -54,10 +54,3 @@ class PlatformInterface:
     def set_launch_on_boot(self, app_name, exe_path, enable=True):
         pass
 
-    # Custom Scheme Support
-    def register_pytron_scheme(self, w, callback):
-        """
-        Registers the pytron:// scheme to be handled by the callback.
-        callback(url) -> (data: bytes, mime_type: str)
-        """
-        pass

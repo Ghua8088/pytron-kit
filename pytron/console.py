@@ -52,7 +52,9 @@ def set_log_file(path: str | None):
 def log(msg: str, style: str = "info", title: str = "Pytron") -> None:
     """Helper to print [Pytron] messages with style and log to file."""
     # Print to console
-    console.print(f"[bold][{title}][/bold] {msg}", style=style)
+    # Use markup=False for the message part to avoid crashing on brackets like [foo]
+    console.print(f"[bold][{title}][/bold] ", style=style, end="")
+    console.print(msg, style=style, markup=False)
 
     # Log to file if enabled
     if _log_file:
@@ -108,7 +110,7 @@ def run_command_with_output(
             stripped = line.rstrip()
             if stripped:
                 # Printing to console while Progress is active automatically handles "moving" the output above the bar
-                console.print(stripped, style=style)
+                console.print(stripped, style=style, markup=False)
                 # Also log to file if enabled (without rich tags)
                 if _log_file:
                     try:
@@ -120,5 +122,6 @@ def run_command_with_output(
         process.wait()
         return process.returncode
     except Exception as e:
-        console.print(f"Error running command: {e}", style="error")
+        console.print("Error running command:", style="error", end=" ")
+        console.print(str(e), style="error", markup=False)
         return 1

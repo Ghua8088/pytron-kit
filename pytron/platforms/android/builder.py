@@ -7,8 +7,13 @@ import tempfile
 import urllib.request
 import zipfile
 import ctypes
-import lief
 from pathlib import Path
+
+# Optional LIEF import
+try:
+    import lief
+except ImportError:
+    lief = None
 
 # Try to import toml for Rust detection
 try:
@@ -34,7 +39,10 @@ class AndroidBuilder:
         self.zig_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "tools", "zig"
         )
-        self.zig_exe = self._ensure_zig()
+        # Lazy initialization for tools
+        self.zig_exe = None
+        self.ndk_info = None
+        self.env = os.environ.copy()
 
         # Flattened libs cache (for Dependency Flattening Strategy)
         self.flattened_libs_dir = os.path.join(
@@ -43,8 +51,60 @@ class AndroidBuilder:
         os.makedirs(self.flattened_libs_dir, exist_ok=True)
         self.flattened_libs = set()
 
-        self.ndk_info = self._find_ndk_info()
-        self.env = self._get_cross_env()
+    def _fetch_prebuilt_wheel(self, package, output_dir):
+        """Attempts to download a pre-built binary wheel for Android."""
+        print(f"[AndroidBuilder] Searching for pre-built wheels for {package}...")
+        
+        # Common Android platform tags
+        platforms = []
+        if self.arch == "aarch64":
+            platforms = [
+                "android_24_aarch64", 
+                "android_21_aarch64", 
+                "android_24_arm64_v8a", 
+                "android_21_arm64_v8a"
+            ]
+        elif self.arch == "x86_64":
+            platforms = ["android_24_x86_64", "android_21_x86_64"]
+
+        # Add BeeWare repository
+        extra_indexes = [
+            "https://pypi.anaconda.org/beeware/simple",
+        ]
+
+        for platform in platforms:
+            try:
+                cmd = [
+                    sys.executable, "-m", "pip", "download",
+                    package,
+                    "--dest", output_dir,
+                    "--platform", platform,
+                    "--only-binary", ":all:",
+                    "--no-deps",
+                ]
+                for url in extra_indexes:
+                    cmd.extend(["--extra-index-url", url])
+                
+                # Run quietly
+                subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
+                # Check if we actually got a wheel
+                downloaded = [f for f in os.listdir(output_dir) if f.lower().startswith(package.lower()) and f.endswith(".whl")]
+                if downloaded:
+                    print(f"[AndroidBuilder] Found pre-built wheel: {downloaded[0]}")
+                    return True
+            except subprocess.CalledProcessError:
+                continue
+        
+        return False
+
+    def _ensure_tools(self):
+        """Lazy load tools only when needed for compilation."""
+        if not self.zig_exe:
+            self.zig_exe = self._ensure_zig()
+        if not self.ndk_info:
+            self.ndk_info = self._find_ndk_info()
+            self.env = self._get_cross_env()
 
     def repair_wheel(self, wheel_path):
         """
@@ -54,6 +114,10 @@ class AndroidBuilder:
         3. Relocate internal dependencies to the flattened folder.
         4. Patch the .so files to find dependencies in the flat namespace.
         """
+        if lief is None:
+            print("[AndroidBuilder] Warning: LIEF not installed. Skipping dependency flattening/repair.")
+            return False
+
         import zipfile
 
         temp_repair = tempfile.mkdtemp(prefix="pytron_repair_")
@@ -86,6 +150,8 @@ class AndroidBuilder:
 
     def _patch_so(self, so_path, wheel_root):
         """Patches an ELF file to fulfill Dependency Flattening."""
+        if lief is None:
+            return False
         try:
             binary = lief.parse(so_path)
             if not binary:
@@ -260,6 +326,12 @@ class AndroidBuilder:
         # Use the current Python version to match the host environment
         py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
         # Fallback: if BeeWare hasn't released yet for latest, you might need to adjust this.
+        # Using 3.11 as a safe default if 3.14 is not available, or let it fail gracefully
+        # BeeWare usually has 3.8-3.12 support.
+        if sys.version_info.minor > 12:
+             print(f"[AndroidBuilder] Warning: Python {py_ver} might not be supported by BeeWare yet. Trying 3.12...")
+             py_ver = "3.12"
+
         url = f"https://github.com/beeware/Python-Android-support/releases/download/{py_ver}-b1/Python-{py_ver}-Android-support.b1.zip"
         zip_path = os.path.join(cache_dir, "python-android-support.zip")
 
@@ -267,6 +339,7 @@ class AndroidBuilder:
             import urllib.request
 
             if not os.path.exists(zip_path):
+                print(f"[AndroidBuilder] Downloading {url}...")
                 urllib.request.urlretrieve(url, zip_path)
 
             import zipfile
@@ -493,6 +566,15 @@ build_time_vars = {{
 
     def build_wheel(self, package, output_dir, cpp_include=None):
         """Builds a wheel using the minimalist architecture Logic."""
+        # 0. Try to fetch pre-built wheel first
+        if self._fetch_prebuilt_wheel(package, output_dir):
+            # If found, we still run repair/flattening just in case
+            for whl in os.listdir(output_dir):
+                if whl.endswith(".whl"):
+                    self.repair_wheel(os.path.join(output_dir, whl))
+            return True
+
+        self._ensure_tools()
         if not self.zig_exe:
             print("[AndroidBuilder] Zig not initialized.")
             return False
