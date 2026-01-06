@@ -12,10 +12,6 @@ try:
 except ImportError:
     IS_ANDROID = False
 CURRENT_PLATFORM = platform.system()
-os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--allow-file-access-from-files"
-os.environ["WebKitWebProcessArguments"] = (
-    "--allow-file-access-from-files"  # CORS AVOIDANCE (All platforms)
-)
 
 # -------------------------------------------------------------------
 # Callback signatures (Must be available for import)
@@ -212,8 +208,13 @@ else:
     lib.webview_navigate.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
     lib.webview_run.argtypes = [ctypes.c_void_p]
     lib.webview_destroy.argtypes = [ctypes.c_void_p]
-    lib.webview_eval.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
     lib.webview_init.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+
+    try:
+        lib.webview_debug.argtypes = [ctypes.c_void_p]
+        lib.webview_debug.restype = None
+    except AttributeError:
+        pass
 
     lib.webview_get_window.argtypes = [ctypes.c_void_p]
     lib.webview_get_window.restype = ctypes.c_void_p

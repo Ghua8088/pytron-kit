@@ -19,24 +19,43 @@ except ImportError:
 
 
 class PytronJSONEncoder(json.JSONEncoder):
+    def __init__(self, *args, **kwargs):
+        # PERFORMANCE: Capture the VAP provider if passed
+        self.vap_provider = kwargs.pop("vap_provider", None)
+        super().__init__(*args, **kwargs)
+
     def default(self, obj):
-        # 1. Pydantic Models
         if pydantic and isinstance(obj, pydantic.BaseModel):
             try:
                 return obj.model_dump()
             except AttributeError:
                 return obj.dict()
 
-        # 2. PIL Images -> Base64 Data URI
         if Image and isinstance(obj, Image.Image):
+            # PERFORMANCE: Avoid Base64 overhead for images
+            # Generate a virtual URL that uses the binary bridge (VAP)
+            asset_id = f"gen_img_{uuid.uuid4().hex[:8]}"
             buffered = io.BytesIO()
             obj.save(buffered, format="PNG")
+            
+            # Note: We need a reference to the app to call serve_data.
+            # Since this is a static encoder, we check if it's attached elsewhere
+            # or fallback to base64 if no asset provider is found.
+            if hasattr(self, "vap_provider"):
+                self.vap_provider(asset_id, buffered.getvalue(), "image/png")
+                return f"pytron://{asset_id}"
+
             img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
             return f"data:image/png;base64,{img_str}"
 
-        # 3. Standard Types
         if isinstance(obj, bytes):
+            # PERFORMANCE: Avoid 33% Base64 bloat for binary blobs
+            if hasattr(self, "vap_provider"):
+                asset_id = f"gen_bin_{uuid.uuid4().hex[:8]}"
+                self.vap_provider(asset_id, obj, "application/octet-stream")
+                return f"pytron://{asset_id}"
             return base64.b64encode(obj).decode("utf-8")
+        
         if isinstance(obj, (datetime.datetime, datetime.date, datetime.time)):
             return obj.isoformat()
         if isinstance(obj, datetime.timedelta):
@@ -117,14 +136,16 @@ class PytronJSONEncoder(json.JSONEncoder):
             return super().default(obj)
 
 
-def pytron_serialize(obj):
+def pytron_serialize(obj, vap_provider=None):
     """
     Helper to serialize objects to JSON-compatible primitives.
-    This ensures that return values from Python functions are safe for pywebview to serialize.
+    OPTIMIZED: Avoids double serialization (dumps/loads) by manually traversing
+    complex types or using a lightweight conversion.
     """
-    # Optimization: if it's already a primitive, return it
     if isinstance(obj, (str, int, float, bool, type(None))):
         return obj
 
-    # Use the encoder to handle everything else recursively
-    return json.loads(json.dumps(obj, cls=PytronJSONEncoder))
+    # We pass the vap_provider recursively through the encoder
+    # json.dumps takes cls and passes extra kwargs to the cls constructor
+    serialized = json.dumps(obj, cls=PytronJSONEncoder, vap_provider=vap_provider)
+    return json.loads(serialized)

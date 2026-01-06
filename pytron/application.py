@@ -23,6 +23,11 @@ from .apputils.extras import ExtrasMixin
 
 class App(ConfigMixin, WindowMixin, ExtrasMixin, CodegenMixin, NativeMixin):
     def __init__(self, config_file="settings.json"):
+        # PERFORMANCE: Shared thread pool for all internal window operations
+        self.thread_pool = __import__("concurrent.futures").futures.ThreadPoolExecutor(
+            max_workers=10
+        )
+        
         # Init State
         self.windows = []
         self.is_running = False

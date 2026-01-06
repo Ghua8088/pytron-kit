@@ -31,6 +31,7 @@ class WindowsImplementation(PlatformInterface):
                 pass
         
         self._protocol_handler = None
+        self._webview_env = None
 
     def notification(self, w, title, message, icon=None):
         system.notification(w, title, message, icon)

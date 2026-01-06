@@ -7,6 +7,7 @@ import asyncio
 import inspect
 import pathlib
 import platform
+import mimetypes
 from collections import deque
 import logging
 import os
@@ -22,7 +23,8 @@ from .platforms.interface import PlatformInterface
 # -------------------------------------------------------------------
 def _dispatch_handler(window_ptr, arg_ptr):
     js_code = ctypes.cast(arg_ptr, ctypes.c_char_p).value  # read JS code
-    lib.webview_eval(window_ptr, js_code)
+    # Fix: Explicitly cast to c_void_p to prevent "int too long to convert" on 64-bit systems
+    lib.webview_eval(ctypes.c_void_p(window_ptr), js_code)
 
 
 c_dispatch_handler = dispatch_callback(_dispatch_handler)
@@ -36,9 +38,24 @@ class Webview:
         self.config = config
         self.logger = logging.getLogger("Pytron.Webview")
 
-        self.thread_pool = __import__("concurrent.futures").futures.ThreadPoolExecutor(
-            max_workers=5
-        )
+        # SECURITY/CORS: Fix for "origin 'null'" and CORS issues with file:// and ES Modules in WebView2.
+        # This allows Vite builds (type="module") to load correctly over the file:// scheme.
+        if not IS_ANDROID and platform.system() == "Windows":
+             # --allow-file-access-from-files: Allows file:// to fetch other file:// resources.
+             # --disable-web-security: Permissive mode for complex ESM module graphs over custom schemes/file.
+             args = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
+             if "--allow-file-access-from-files" not in args:
+                 os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = f"{args} --allow-file-access-from-files --disable-web-security"
+
+        # PERFORMANCE: Use shared thread pool from App if available
+        self.app = config.get("__app__")
+        if self.app:
+            self.thread_pool = self.app.thread_pool
+        else:
+            self.thread_pool = __import__(
+                "concurrent.futures"
+            ).futures.ThreadPoolExecutor(max_workers=5)
+
         self._gc_protector = deque(maxlen=50)
         self._bound_functions = {}
         self._served_data = {}
@@ -52,9 +69,28 @@ class Webview:
             self.w = ctypes.c_void_p(int(shield_ptr))
             self.logger.debug(f"Shielded Mode: Attaching to native window {shield_ptr}")
         else:
-            self.w = lib.webview_create(int(config.get("debug", False)), None)
+            # Fix: Store as c_void_p object to ensure consistent pointer handling on 64-bit systems
+            raw_ptr = lib.webview_create(int(config.get("debug", False)), None)
+            self.w = ctypes.c_void_p(raw_ptr)
             
         self._cb = c_dispatch_handler
+
+        # ------------------------------------------------
+        # PLATFORM INITIALIZATION
+        # ------------------------------------------------
+        CURRENT_PLATFORM = platform.system()
+        self._platform = PlatformInterface()
+
+        if not IS_ANDROID:
+            if CURRENT_PLATFORM == "Windows":
+                from .platforms.windows import WindowsImplementation
+                self._platform = WindowsImplementation()
+            elif CURRENT_PLATFORM == "Linux":
+                from .platforms.linux import LinuxImplementation
+                self._platform = LinuxImplementation()
+            elif CURRENT_PLATFORM == "Darwin":
+                from .platforms.darwin import DarwinImplementation
+                self._platform = DarwinImplementation()
 
         # Default Bindings
         self.bind("pytron_minimize", lambda: self.minimize(), run_in_thread=False)
@@ -80,6 +116,7 @@ class Webview:
             "pytron_set_taskbar_progress", self.set_taskbar_progress, run_in_thread=True
         )
         self.bind("pytron_notify", self.notify, run_in_thread=False)
+        self.bind("pytron_open_devtools", self.open_devtools, run_in_thread=False)
 
         # Dialog bindings
         self.bind("pytron_dialog_open_file", self.dialog_open_file, run_in_thread=True)
@@ -91,35 +128,203 @@ class Webview:
         # Compatibility binding for UI components
         self.bind("get_registered_shortcuts", lambda: [], run_in_thread=False)
 
-        # Webview Error Reporting
-        self.bind("pytron_log", lambda msg: self.logger.info(f"Webview Log: {msg}"), run_in_thread=False)
+        # Asset Provider (Performance Bridge)
+        # This provides a port-less, high-performance O(1) binary bridge.
+        # It handles pytron:// URLs via window.fetch and the Latin-1 trick.
+        self._served_data = {}
         
-        # Robust Asset Provider
-        def _get_asset(key):
+        def _get_binary_asset(key):
+            """Returns (mime, raw_latin1_data) with Path Traversal Protection."""
+            data, mime = None, "application/octet-stream"
+            
+            # 1. Check Memory
             if key in self._served_data:
                 data, mime = self._served_data[key]
-                # Convert to Data URI for seamless JS handling
-                b64 = base64.b64encode(data).decode('utf-8')
-                return {"data": f"data:{mime};base64,{b64}", "mime": mime}
+            
+            # 2. Check Disk (Virtual Mapping for the app)
+            elif key.startswith("app/"):
+                rel_path = key[4:]
+                app_dir = getattr(self, "_vap_app_dir", self._app_root)
+                
+                try:
+                    # SECURITY: Sanitize path to prevent directory traversal
+                    # This ensures the final path is INSIDE the app_dir
+                    safe_path = os.path.normpath(rel_path).lstrip(os.path.sep).lstrip("/")
+                    path_obj = (app_dir / safe_path).resolve()
+                    
+                    if not str(path_obj).startswith(str(app_dir.resolve())):
+                         self.logger.warning(f"Security blocked path traversal attempt: {key}")
+                         return None
+
+                    if path_obj.exists() and path_obj.is_file():
+                        mime, _ = mimetypes.guess_type(str(path_obj))
+                        with open(path_obj, "rb") as f:
+                            data = f.read()
+                except Exception as e:
+                    self.logger.error(f"Asset access error: {e}")
+                    return None
+
+            if data:
+                return {"mime": mime or "application/octet-stream", "raw": data.decode('latin-1')}
             return None
 
-        self.bind("pytron_get_asset", _get_asset, run_in_thread=True)
+        self.bind("__pytron_vap_get", _get_binary_asset, run_in_thread=True)
 
+        # Legacy compatibility binding
+        def _legacy_get_asset(key):
+            asset = _get_binary_asset(key)
+            if asset:
+                # Convert back to Base64 for legacy clients
+                data_b64 = base64.b64encode(asset["raw"].encode("latin-1")).decode("utf-8")
+                return {"data": f"data:{asset['mime']};base64,{data_b64}"}
+            return None
+        self.bind("pytron_get_asset", _legacy_get_asset, run_in_thread=True)
+
+        # Inject Virtual Fetch Interceptor
+        # This allows the frontend to call fetch('pytron://...') for heavy assets
+        # and get binary data with zero base64 overhead.
         init_js = """
+        (function() {
+            window.__pytron_fetch_interceptor_active = true;
+            const originalFetch = window.fetch;
+            
+            function getPytronKey(url) {
+                if (!url || typeof url !== 'string') return null;
+                const match = url.match(/pytron:\/\/([^?#]+)/);
+                return match ? match[1] : null;
+            }
+
+            window.fetch = async (input, init) => {
+                const url = typeof input === 'string' ? input : (input ? input.url : '');
+                const key = getPytronKey(url);
+                
+                if (key) {
+                    console.log("[Pytron VAP] Intercepting fetch for key:", key);
+                    const asset = await window.__pytron_vap_get(key);
+                    if (asset) {
+                        const bytes = new Uint8Array(asset.raw.length);
+                        for (let i = 0; i < asset.raw.length; i++) {
+                            bytes[i] = asset.raw.charCodeAt(i);
+                        }
+                        const blob = new Blob([bytes], {type: asset.mime});
+                        return new Response(blob);
+                    }
+                    console.warn("[Pytron VAP] Asset not found in bridge:", key);
+                    return new Response('Not Found', {status: 404});
+                }
+                return originalFetch(input, init);
+            };
+
+            // Global handler for pytron:// URLs in tags (Images, Scripts, Styles)
+            async function handlePytronAsset(el) {
+                if (!el || !el.tagName) return;
+                const isLink = el.tagName === 'LINK';
+                const isScript = el.tagName === 'SCRIPT';
+                const attr = isLink ? 'href' : 'src';
+                
+                const rawUrl = el.getAttribute(attr);
+                const key = getPytronKey(rawUrl) || getPytronKey(el[attr]);
+
+                if (key && !el.__pytron_loading) {
+                    el.__pytron_loading = true;
+                    try {
+                        console.log("[Pytron VAP] Reconciling asset key:", key, "for", el.tagName);
+                        const res = await fetch(`pytron://${key}`);
+                        if (res.ok) {
+                            const blob = await res.blob();
+                            const blobUrl = URL.createObjectURL(blob);
+                            
+                            if (isScript) {
+                                const newScript = document.createElement('script');
+                                Array.from(el.attributes).forEach(a => {
+                                    if (a.name !== 'src') newScript.setAttribute(a.name, a.value);
+                                });
+                                newScript.src = blobUrl;
+                                newScript.__pytron_loading = true;
+                                el.parentNode.replaceChild(newScript, el);
+                            } else {
+                                if (el.__pytron_blob_url) URL.revokeObjectURL(el.__pytron_blob_url);
+                                el.__pytron_blob_url = blobUrl;
+                                el[attr] = blobUrl;
+                            }
+                        }
+                    } catch (e) {
+                        console.error("[Pytron VAP] Asset load failed:", e);
+                    } finally {
+                        el.__pytron_loading = false;
+                    }
+                }
+            }
+
+            // Observe the DOM for new assets or src/href changes
+            const observer = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    if (mutation.type === 'childList') {
+                        mutation.addedNodes.forEach(node => {
+                            if (['IMG', 'SCRIPT', 'LINK'].includes(node.tagName)) handlePytronAsset(node);
+                            else if (node.querySelectorAll) {
+                                node.querySelectorAll('img, script, link').forEach(handlePytronAsset);
+                            }
+                        });
+                    } else if (mutation.type === 'attributes') {
+                        if (['IMG', 'SCRIPT', 'LINK'].includes(mutation.target.tagName)) {
+                            handlePytronAsset(mutation.target);
+                        }
+                    }
+                }
+            });
+
+            const startObserver = () => {
+                const target = document.documentElement || document.body;
+                if (target) {
+                    observer.observe(target, { 
+                        childList: true, 
+                        subtree: true, 
+                        attributes: true, 
+                        attributeFilter: ['src', 'href'] 
+                    });
+                } else {
+                    setTimeout(startObserver, 5);
+                }
+            };
+            startObserver();
+
+            // Initial scan
+            const scan = () => document.querySelectorAll('img, script, link').forEach(handlePytronAsset);
+            if (document.readyState === 'loading') {
+                window.addEventListener('DOMContentLoaded', scan);
+            } else {
+                scan();
+            }
+        })();
+        """
+        
+        init_js += """
         console.log("[Pytron] Core Initialized");
         window.pytron = window.pytron || {};
         window.pytron.is_ready = true;
         """
 
-        # Disable default context menu if requested in config
-        if not config.get("default_context_menu", True):
+        # Disable default context menu if requested in config, but allow it in debug mode
+        if not config.get("default_context_menu", True) and not config.get("debug", False):
             init_js += (
                 "\nwindow.addEventListener('contextmenu', e => e.preventDefault());"
             )
 
+        # Development Shortcuts
+        if config.get("debug", False):
+            init_js += """
+            window.addEventListener('keydown', e => {
+                if ((e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i')) || e.key === 'F12') {
+                    if (typeof window.pytron_open_devtools === 'function') {
+                        window.pytron_open_devtools();
+                    }
+                }
+            });
+            """
+
         lib.webview_init(self.w, init_js.encode("utf-8"))
 
-        CURRENT_PLATFORM = platform.system()
         # self._served_data = {} # Removed: initialized earlier
         
         # Resolve App Root for reliable relative pathing
@@ -133,19 +338,6 @@ class Webview:
                 self._app_root = pathlib.Path(main_script).parent
             else:
                 self._app_root = pathlib.Path.cwd()
-
-        self._platform = PlatformInterface()
-
-        if not IS_ANDROID:
-            if CURRENT_PLATFORM == "Windows":
-                from .platforms.windows import WindowsImplementation
-                self._platform = WindowsImplementation()
-            elif CURRENT_PLATFORM == "Linux":
-                from .platforms.linux import LinuxImplementation
-                self._platform = LinuxImplementation()
-            elif CURRENT_PLATFORM == "Darwin":
-                from .platforms.darwin import DarwinImplementation
-                self._platform = DarwinImplementation()
 
         self.normalize_path(config)
 
@@ -169,6 +361,14 @@ class Webview:
         if self.frameless:
             self.make_frameless()
 
+        if config.get("debug", False):
+            self.logger.debug(f"Debug mode active. Native webview_debug available: {hasattr(lib, 'webview_debug')}")
+            if hasattr(lib, "webview_debug"):
+                try:
+                    lib.webview_debug(self.w)
+                except Exception as e:
+                    self.logger.warning(f"Could not launch debug window: {e}")
+
         if config.get("navigate_on_init", True):
             self.navigate(config["url"])
 
@@ -191,6 +391,14 @@ class Webview:
 
     def toggle_maximize(self):
         return self._platform.toggle_maximize(self.w)
+
+    def open_devtools(self):
+        """Opens the native developer tools window if supported."""
+        if hasattr(lib, "webview_debug"):
+            self.logger.debug(f"Opening DevTools for window: {self.w.value}")
+            lib.webview_debug(self.w)
+        else:
+            self.logger.warning("Native DevTools (webview_debug) not supported by the current engine.")
 
     def make_frameless(self):
         self._platform.make_frameless(self.w)
@@ -247,23 +455,6 @@ class Webview:
         return self._platform.message_box(self.w, title, message, style)
 
     def navigate(self, url):
-        if url.startswith("pytron://"):
-            key = url.replace("pytron://", "").split("?")[0].split("#")[0]
-            if key in self._served_data:
-                data, mime = self._served_data[key]
-                if "text/html" in mime:
-                    try:
-                        html_content = data.decode("utf-8")
-                        lib.webview_set_html(self.w, html_content.encode("utf-8"))
-                        return
-                    except Exception as e:
-                        self.logger.error(f"Failed to decode pytron:// asset as HTML: {e}")
-            
-            # If not found or not HTML, we can't 'navigate' to it natively anymore.
-            # We log a warning.
-            self.logger.warning(f"Native navigation to {url} is no longer supported. Use fetch() or relative file paths.")
-            return
-
         lib.webview_navigate(self.w, url.encode("utf-8"))
 
     def start(self):
@@ -315,6 +506,11 @@ class Webview:
                     )
                     return
 
+            # Helper for binary-optimized serialization
+            def _serialize_result(res):
+                # Pass serve_data as the VAP provider to avoid Base64
+                return pytron_serialize(res, vap_provider=self.serve_data)
+
             # ------------------------------------------------
             # CASE A: ASYNC FUNCTION (Run in Background Loop)
             # ------------------------------------------------
@@ -324,7 +520,7 @@ class Webview:
                     try:
                         result = await python_func(*args)
                         # Ensure result is JSON-serializable using Pytron's encoder
-                        res_json = json.dumps(pytron_serialize(result))
+                        res_json = json.dumps(_serialize_result(result))
                         self._return_result(seq, 0, res_json)
                     except Exception as e:
                         self.logger.error(f"Async execution error in {name}: {e}")
@@ -341,7 +537,7 @@ class Webview:
                     try:
                         result = python_func(*args)
                         # Ensure result is JSON-serializable using Pytron's encoder
-                        result_json = json.dumps(pytron_serialize(result))
+                        result_json = json.dumps(_serialize_result(result))
                         self._return_result(seq, 0, result_json)
                     except Exception as e:
                         self.logger.error(f"Execution error in {name}: {e}")
@@ -378,8 +574,8 @@ class Webview:
     # Safe event dispatch to JS
     # -------------------------------------------------------------------
     def emit(self, event_name, data):
-        # Serialize event payloads using Pytron's serializer so complex objects work
-        payload = json.dumps(pytron_serialize(data))
+        # PERFORMANCE: Use optimized serialization with VAP support
+        payload = json.dumps(pytron_serialize(data, vap_provider=self.serve_data))
         js_code = (
             f"window.dispatchEvent(new CustomEvent('{event_name}', "
             f"{{ detail: {payload} }}));"
@@ -451,7 +647,7 @@ class Webview:
             )
             raise ConfigError("No URL or HTML file specified in configuration.")
 
-        if raw_url.startswith(("http://", "https://", "file://")):
+        if raw_url.startswith(("http://", "https://", "file://", "pytron://")):
             return
         path_obj = pathlib.Path(raw_url)
 
@@ -483,7 +679,9 @@ class Webview:
                 f"Pytron Error: HTML file not found at: {path_obj}"
             )
 
-        # Default fallback
+        # Standard file path for engine-level navigation (Fixes blank page)
+        # We still provide the high-performance VAP bridge via current JS hooks.
         uri = path_obj.as_uri()
         config["url"] = uri
+        self._vap_app_dir = path_obj.parent
         self.logger.debug(f"Normalized URL: {uri}")

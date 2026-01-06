@@ -15,22 +15,23 @@ class ReactiveState:
 
     def __setattr__(self, key, value):
         # Store the value in a thread-safe manner
-        lock = getattr(self, "_lock", None)
-        if lock is not None:
-            with lock:
-                self._data[key] = value
-        else:
+        with self._lock:
+            # Check if value actually changed to prevent redundant IPC
+            if self._data.get(key) == value:
+                return
             self._data[key] = value
 
-        # Broadcast to all windows outside of the lock to avoid potential deadlocks
+        # Broadcast to all windows outside of the lock
         app_ref = getattr(self, "_app", None)
         if app_ref:
-            # Iterate over a snapshot of windows to avoid issues if list is mutated
+            # PERFORMANCE: Only send the delta (key/value)
+            # Full state sync is handled by the initial bridge connection
             for window in list(app_ref.windows):
                 try:
+                    # Optimized delta-only sync
                     window.emit("pytron:state-update", {"key": key, "value": value})
-                    # Compatibility: Emit the full state to pytron:state
-                    window.emit("pytron:state", self.to_dict())
+                    # We remove the full pytron:state emit here. 
+                    # The frontend 'pytron-client' should update its local state copy from the delta.
                 except Exception as e:
                     print(f"[Pytron] Error emitting state update for key '{key}': {e}")
 
