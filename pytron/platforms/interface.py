@@ -27,6 +27,9 @@ class PlatformInterface:
     def hide(self, w):
         pass
 
+    def is_visible(self, w):
+        return True  # Default assumption for platforms that don't impl check
+
     def show(self, w):
         pass
 

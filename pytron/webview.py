@@ -509,6 +509,9 @@ class Webview:
     def hide(self):
         self._platform.hide(self.w)
 
+    def is_visible(self):
+        return self._platform.is_visible(self.w)
+
     def show(self):
         self._platform.show(self.w)
 

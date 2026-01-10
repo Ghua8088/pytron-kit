@@ -60,6 +60,13 @@ def hide(w):
     libs.gtk.gtk_widget_hide(win)
 
 
+def is_visible(w):
+    if not libs.gtk:
+        return True
+    win = get_window(w)
+    return bool(libs.gtk.gtk_widget_get_visible(win))
+
+
 def show(w):
     if not libs.gtk:
         return

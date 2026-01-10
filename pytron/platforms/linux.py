@@ -32,6 +32,9 @@ class LinuxImplementation(PlatformInterface):
     def hide(self, w):
         window.hide(w)
 
+    def is_visible(self, w):
+        return window.is_visible(w)
+
     def show(self, w):
         window.show(w)
 

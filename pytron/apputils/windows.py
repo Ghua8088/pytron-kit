@@ -241,6 +241,13 @@ class WindowMixin:
                 except Exception:
                     pass
 
+    @property
+    def is_visible(self):
+        """Returns True if the primary window is visible."""
+        if self.windows:
+            return self.windows[0].is_visible()
+        return False
+
     def notify(self, title, message, type="info", duration=5000):
         if self.windows:
             for window in self.windows:

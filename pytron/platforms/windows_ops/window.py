@@ -59,6 +59,11 @@ def hide(w):
     ctypes.windll.user32.ShowWindow(hwnd, SW_HIDE)
 
 
+def is_visible(w):
+    hwnd = get_hwnd(w)
+    return bool(ctypes.windll.user32.IsWindowVisible(hwnd))
+
+
 def show(w):
     hwnd = get_hwnd(w)
     ctypes.windll.user32.ShowWindow(hwnd, SW_SHOW)

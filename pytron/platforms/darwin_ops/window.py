@@ -49,6 +49,11 @@ def hide(w):
     call(win, "orderOut:", None)
 
 
+def is_visible(w):
+    win = get_window(w)
+    return bool(call(win, "isVisible"))
+
+
 def show(w):
     win = get_window(w)
     call(win, "makeKeyAndOrderFront:", None)
