@@ -21,6 +21,7 @@ from .commands.uninstall import cmd_uninstall
 from .commands.show import cmd_show
 from .commands.plugin import cmd_plugin
 from .commands.frontend import cmd_frontend
+from .commands.login import cmd_login, cmd_logout
 from .commands.android import cmd_android
 from .commands.doctor import cmd_doctor
 from .commands.workflow import cmd_workflow
@@ -88,6 +89,16 @@ def build_parser() -> argparse.ArgumentParser:
         "show", help="Show installed packages", parents=[base_parser]
     )
     p_show.set_defaults(func=cmd_show)
+
+    p_login = sub.add_parser(
+        "login", help="Securely store GitHub credentials for plugin installation", parents=[base_parser]
+    )
+    p_login.set_defaults(func=cmd_login)
+
+    p_logout = sub.add_parser(
+        "logout", help="Log out from GitHub and remove stored credentials", parents=[base_parser]
+    )
+    p_logout.set_defaults(func=cmd_logout)
 
     p_doctor = sub.add_parser(
         "doctor", help="Check system dependencies", parents=[base_parser]

@@ -22,15 +22,17 @@ class ReactiveState:
             self._data[key] = value
 
             app_ref = getattr(self, "_app", None)
-            if app_ref:
+            if app_ref and app_ref.is_running:
                 # PERFORMANCE: Only send the delta (key/value)
                 for window in list(app_ref.windows):
                     try:
                         window.emit("pytron:state-update", {"key": key, "value": value})
                     except Exception as e:
-                        print(
-                            f"[Pytron] Error emitting state update for key '{key}': {e}"
-                        )
+                        # Silently ignore errors during shutdown
+                        if app_ref.is_running:
+                            print(
+                                f"[Pytron] Error emitting state update for key '{key}': {e}"
+                            )
 
     def __getattr__(self, key):
         lock = getattr(self, "_lock", None)

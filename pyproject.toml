@@ -32,7 +32,9 @@ dependencies = [
   "nuitka",
   "zstandard",
   "comtypes; sys_platform == 'win32'",
-  "cryptography"
+  "cryptography",
+  "keyring",
+  "requests"
 ]
 classifiers = [
   "Programming Language :: Python :: 3",

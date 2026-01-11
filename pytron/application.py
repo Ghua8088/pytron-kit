@@ -317,7 +317,9 @@ class App(ConfigMixin, WindowMixin, ExtrasMixin, CodegenMixin, NativeMixin, Shel
                         self.logger.info(
                             f"Checking/Installing dependencies for {plugin.name}..."
                         )
-                        plugin.install_dependencies(frontend_dir=frontend_dir)
+                        # Pass the configured provider to ensure consistency
+                        provider = self.config.get("frontend_provider", "npm")
+                        plugin.install_dependencies(frontend_dir=frontend_dir, provider=provider)
 
                     plugin.load(self)
                     self.plugins.append(plugin)

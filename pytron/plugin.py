@@ -2,10 +2,12 @@ import os
 import json
 import sys
 import importlib
+import importlib.util
 import logging
 import subprocess
 import threading
 import traceback
+import shutil
 from typing import List, Dict, Any, Union
 
 
@@ -171,9 +173,9 @@ class Plugin:
 
         return True
 
-    def install_dependencies(self, frontend_dir: str = None):
+    def install_dependencies(self, frontend_dir: str = None, provider: str = "npm"):
         """
-        Attempts to install missing Python and NPM dependencies.
+        Attempts to install missing Python and JS dependencies.
         """
         # 1. Python Dependencies
         py_deps = self.python_dependencies
@@ -182,51 +184,68 @@ class Plugin:
                 f"Installing Python dependencies for {self.name}: {py_deps}"
             )
             try:
+                # Resolve the project's virtual environment if it exists
+                python_exe = sys.executable
+                venv_scripts = os.path.join(os.getcwd(), "env", "Scripts", "python.exe")
+                venv_bin = os.path.join(os.getcwd(), "env", "bin", "python")
+                
+                if os.path.exists(venv_scripts):
+                    python_exe = venv_scripts
+                elif os.path.exists(venv_bin):
+                    python_exe = venv_bin
+
                 subprocess.check_call(
-                    [sys.executable, "-m", "pip", "install"] + py_deps
+                    [python_exe, "-m", "pip", "install"] + py_deps
                 )
-                self.logger.info("Python dependencies installed successfully.")
+                self.logger.info(f"Python dependencies installed into {python_exe}")
             except subprocess.CalledProcessError as e:
                 self.logger.error(f"Failed to install Python dependencies: {e}")
                 raise PluginError(f"Python dependency installation failed: {e}")
 
-        # 2. NPM Dependencies
-        npm_deps = self.npm_dependencies
-        if npm_deps and frontend_dir:
-            if not os.path.exists(frontend_dir):
-                self.logger.warning(
-                    f"Frontend directory not found at {frontend_dir}. Skipping NPM dependencies."
-                )
-                return
-
+        # 2. JS Dependencies
+        js_deps = self.npm_dependencies
+        if js_deps:
+            # ISOLATION: Install inside the plugin directory
+            target_dir = self.directory
+            
             self.logger.info(
-                f"Installing NPM dependencies for {self.name} in {frontend_dir}..."
+                f"Installing JS dependencies for {self.name} using '{provider}' in {target_dir} for isolation..."
             )
-            pkg_list = [f"{name}@{ver}" for name, ver in npm_deps.items()]
+            
+            # Ensure a package.json exists in the plugin directory
+            pkg_json_path = os.path.join(target_dir, "package.json")
+            if not os.path.exists(pkg_json_path):
+                pkg_data = {
+                    "name": f"pytron-plugin-{self.name}",
+                    "version": self.version,
+                    "dependencies": js_deps
+                }
+                with open(pkg_json_path, "w") as f:
+                    json.dump(pkg_data, f, indent=2)
 
             try:
-                npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
-                # Use --no-save to keep the main package.json clean if preferred,
-                # but usually plugins need them bundled.
-                subprocess.check_call([npm_cmd, "install"] + pkg_list, cwd=frontend_dir)
-                self.logger.info(
-                    f"NPM dependencies for {self.name} installed successfully."
-                )
+                # Find JS provider binary
+                provider_bin = shutil.which(provider)
+                if not provider_bin:
+                    self.logger.warning(f"JS Provider '{provider}' not found in PATH. Skipping JS dependencies.")
+                    return
+
+                subprocess.check_call([provider_bin, "install"], cwd=target_dir, shell=(sys.platform == "win32"))
+                self.logger.info(f"JS dependencies installed successfully using {provider}.")
             except Exception as e:
-                self.logger.error(f"Failed to install NPM dependencies: {e}")
+                self.logger.error(f"Failed to install JS dependencies: {e}")
+                raise PluginError(f"JS dependency installation failed: {e}")
                 # We don't necessarily want to crash the whole app if NPM is missing,
                 # but we should log it.
 
     def load(self, app_instance):
         """
-        Loads the entry point and runs initialization.
+        Loads the entry point and runs initialization. (Senior Fix: Isolated Namespace)
         """
-        # Ensure we use an absolute path for sys.path to avoid issues after os.chdir
+        # Ensure we use an absolute path
         plugin_dir = os.path.abspath(self.directory)
-        if plugin_dir not in sys.path:
-            sys.path.insert(0, plugin_dir)
-
         entry_str = self.entry_point
+
         if ":" not in entry_str:
             raise PluginError(
                 f"Invalid entry_point format '{entry_str}'. Expected 'module:function' or 'module:Class'"
@@ -234,12 +253,43 @@ class Plugin:
 
         module_name, object_name = entry_str.split(":")
 
+        # Senior Fix: Define a unique name for the module (e.g., "pytron_plugins.myplugin")
+        # This prevents collisions if multiple plugins have a 'main.py' or 'app.py'
+        safe_name = self.name.replace("-", "_").replace(".", "_")
+        unique_module_name = f"pytron_plugins.{safe_name}"
+
+        # Resolve the file path (handles packages and submodules)
+        module_path_parts = module_name.split(".")
+        file_path = os.path.join(plugin_dir, *module_path_parts) + ".py"
+        if not os.path.exists(file_path):
+            init_path = os.path.join(plugin_dir, *module_path_parts, "__init__.py")
+            if os.path.exists(init_path):
+                file_path = init_path
+
+        if not os.path.exists(file_path):
+            raise PluginError(f"Could not find entry point file for plugin '{self.name}': {file_path}")
+
         # Create the Supervised proxy
         supervised_app = SupervisedApp(app_instance, self.name)
 
         try:
-            # Import the module
-            self.module = importlib.import_module(module_name)
+            # Senior Fix: Load the module directly via spec without polluting global sys.path
+            spec = importlib.util.spec_from_file_location(unique_module_name, file_path)
+            if spec and spec.loader:
+                self.module = importlib.util.module_from_spec(spec)
+                sys.modules[unique_module_name] = self.module # Register it safely
+                
+                # To support local imports inside the plugin folder, we briefly add to path
+                # only during the execution of the module.
+                _old_path = sys.path[:]
+                try:
+                    sys.path.insert(0, plugin_dir)
+                    spec.loader.exec_module(self.module)
+                finally:
+                    if plugin_dir in sys.path:
+                        sys.path.remove(plugin_dir)
+            else:
+                raise PluginError(f"Could not load module spec for {self.name}")
 
             # Get the object
             if not hasattr(self.module, object_name):
@@ -262,8 +312,9 @@ class Plugin:
                             p_mod = sys.modules["plugins"]
                             if hasattr(p_mod, "get_registered_config"):
                                 manual_config = p_mod.get_registered_config(self.name)
-                            elif hasattr(p_mod, "_registered_configs"):
-                                manual_config = getattr(p_mod, "_registered_configs").get(self.name, {})
+                            
+                        if manual_config:
+                            self.logger.info(f"Applying manual configuration to '{self.name}': {list(manual_config.keys())}")
 
                         self.instance = entry_obj(supervised_app, **manual_config)
 
@@ -278,8 +329,9 @@ class Plugin:
                             p_mod = sys.modules["plugins"]
                             if hasattr(p_mod, "get_registered_config"):
                                 manual_config = p_mod.get_registered_config(self.name)
-                            elif hasattr(p_mod, "_registered_configs"):
-                                manual_config = getattr(p_mod, "_registered_configs").get(self.name, {})
+
+                        if manual_config:
+                            self.logger.info(f"Applying manual configuration to '{self.name}': {list(manual_config.keys())}")
 
                         self.instance = entry_obj(supervised_app, **manual_config)
 
@@ -318,11 +370,9 @@ class Plugin:
             self.instance = None
 
         if hasattr(self, "module") and self.module:
-            # We can't really 'unimport' in Python reliably, but we can clean up references
+            # Note: We don't remove from sys.modules to avoid breaking background threads
+            # that might still be using the code, but we clear the local reference.
             del self.module
-
-        # Optional: Remove directory from sys.path?
-        # Risky if other plugins share it or if user reloads.
 
     def invoke_package_hook(self, context: Dict[str, Any]):
         """
