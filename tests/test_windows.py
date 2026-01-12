@@ -77,7 +77,9 @@ def test_create_window_exposed_functions(app, mock_webview):
     window = app.create_window()
 
     # Should bind the function
-    window.bind.assert_called_with("my_func", mock_func, secure=False, run_in_thread=True)
+    window.bind.assert_called_with(
+        "my_func", mock_func, secure=False, run_in_thread=True
+    )
 
 
 def test_broadcast(app, mock_webview):
