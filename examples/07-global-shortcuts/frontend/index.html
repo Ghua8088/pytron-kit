@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shortcuts & Tray</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            text-align: center;
+        }
+
+        .kbd-group {
+            display: flex;
+            gap: 8px;
+            margin: 20px 0;
+        }
+
+        kbd {
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 4px 10px;
+            font-family: monospace;
+            box-shadow: 0 2px 0 #000;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            background: #6366f1;
+            color: white;
+        }
+
+        .hint {
+            color: #888;
+            font-size: 14px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>System Integration</h1>
+
+    <p>Try pressing the global shortcuts:</p>
+
+    <div class="kbd-group">
+        <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd>
+        <span>(Toggle Window)</span>
+    </div>
+
+    <div class="kbd-group">
+        <kbd>Alt</kbd> + <kbd>K</kbd>
+        <span>(Notification)</span>
+    </div>
+
+    <button id="trayBtn">Initialize System Tray</button>
+    <button id="notifyBtn">Send Notification</button>
+
+    <p class="hint">Check your OS taskbar/menu bar after clicking Initialize Tray.</p>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "pytron-client": "../../node_modules/pytron-client/index.js"
+        }
+    }
+    </script>
+    <script type="module">
+        import pytron from 'pytron-client';
+
+        document.getElementById('trayBtn').onclick = async () => {
+            const status = await pytron.setup_tray();
+            alert(status);
+        };
+
+        document.getElementById('notifyBtn').onclick = () => {
+            pytron.send_test_notification();
+        };
+    </script>
+</body>
+
+</html>

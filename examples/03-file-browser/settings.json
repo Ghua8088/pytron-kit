@@ -1,0 +1,9 @@
+{
+    "title": "Pytron File Browser",
+    "dimensions": [
+        800,
+        600
+    ],
+    "url": "frontend/index.html",
+    "debug": true
+}

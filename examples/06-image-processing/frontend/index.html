@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Processing (VAP)</title>
+    <style>
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: #111;
+            color: #eee;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px;
+            margin: 0;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 30px;
+        }
+
+        button {
+            padding: 12px 24px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        button:hover {
+            background: #2563eb;
+        }
+
+        .canvas-container {
+            background: #222;
+            padding: 10px;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+            min-width: 400px;
+            min-height: 300px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        img {
+            max-width: 100%;
+            border-radius: 4px;
+        }
+
+        .info {
+            margin-top: 20px;
+            color: #888;
+            font-size: 14px;
+        }
+
+        .url {
+            color: #03dac6;
+            font-family: monospace;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>High Performance Binary IPC</h1>
+    <p style="color: #888; margin-top: -10px; margin-bottom: 30px;">Zero-copy image streaming using pytron:// protocol
+    </p>
+
+    <div class="controls">
+        <button id="noiseBtn">Generate Noise</button>
+        <button id="artBtn">Generate Art</button>
+    </div>
+
+    <div class="canvas-container">
+        <img id="outputImg" src="" style="display: none;">
+        <div id="placeholder">No image generated yet</div>
+    </div>
+
+    <div class="info" id="info">
+        Ready.
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "pytron-client": "../../node_modules/pytron-client/index.js"
+        }
+    }
+    </script>
+    <script type="module">
+        import pytron from 'pytron-client';
+
+        const noiseBtn = document.getElementById('noiseBtn');
+        const artBtn = document.getElementById('artBtn');
+        const outputImg = document.getElementById('outputImg');
+        const placeholder = document.getElementById('placeholder');
+        const info = document.getElementById('info');
+
+        async function handleAction(fn) {
+            info.innerText = "Processing...";
+            const start = performance.now();
+
+            // Call the Python function. It returns a pytron:// URL
+            const imageUrl = await fn();
+
+            const end = performance.now();
+
+            outputImg.src = imageUrl;
+            outputImg.style.display = 'block';
+            placeholder.style.display = 'none';
+
+            info.innerHTML = `Generated in <b>${(end - start).toFixed(2)}ms</b>. URL: <span class="url">${imageUrl}</span>`;
+        }
+
+        noiseBtn.onclick = () => handleAction(pytron.generate_noise);
+        artBtn.onclick = () => handleAction(pytron.create_abstract_art);
+    </script>
+</body>
+
+</html>

@@ -136,18 +136,30 @@ def save_file_dialog(w, title, default_path=None, default_name=None, file_types=
 
 
 def open_folder_dialog(w, title, default_path=None):
+    shell32 = ctypes.windll.shell32
+    
+    # We MUST define argtypes and restype for x64 pointer safety
+    shell32.SHBrowseForFolderW.argtypes = [ctypes.POINTER(BROWSEINFOW)]
+    shell32.SHBrowseForFolderW.restype = ctypes.c_void_p
+    
+    shell32.SHGetPathFromIDListW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+    shell32.SHGetPathFromIDListW.restype = ctypes.wintypes.BOOL
+    
+    shell32.ILFree.argtypes = [ctypes.c_void_p]
+    shell32.ILFree.restype = None
+
     bif = BROWSEINFOW()
     bif.hwndOwner = get_hwnd(w)
     bif.lpszTitle = title
     bif.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE
 
-    pidl = ctypes.windll.shell32.SHBrowseForFolderW(ctypes.byref(bif))
+    pidl = shell32.SHBrowseForFolderW(ctypes.byref(bif))
     if pidl:
         path = ctypes.create_unicode_buffer(260)
-        if ctypes.windll.shell32.SHGetPathFromIDListW(pidl, path):
-            ctypes.windll.shell32.ILFree(ctypes.c_void_p(pidl))
+        if shell32.SHGetPathFromIDListW(pidl, path):
+            shell32.ILFree(pidl)
             return path.value
-        ctypes.windll.shell32.ILFree(ctypes.c_void_p(pidl))
+        shell32.ILFree(pidl)
     return None
 
 

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pytron File Browser</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #111;
+            color: #eee;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        header {
+            padding: 16px;
+            background: #222;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid #333;
+        }
+
+        #pathInput {
+            flex: 1;
+            background: #000;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: monospace;
+            border: 1px solid #444;
+            color: #fff;
+            outline: none;
+        }
+
+        #pathInput:focus {
+            border-color: #0066cc;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        button:hover {
+            background: #0052a3;
+        }
+
+        main {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .file-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 16px;
+        }
+
+        .item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .item:hover {
+            background: #333;
+        }
+
+        .icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .name {
+            font-size: 13px;
+            word-break: break-all;
+        }
+
+        .empty-state {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            color: #666;
+            font-style: italic;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <button id="browseBtn">📁 Browse...</button>
+        <input type="text" id="pathInput" placeholder="Enter path manually (e.g. C:\Users)">
+        <button id="goBtn">Go</button>
+    </header>
+    <main id="main">
+        <div class="empty-state">Select a folder to start browsing</div>
+    </main>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "pytron-client": "../../node_modules/pytron-client/index.js"
+        }
+    }
+    </script>
+    <script type="module">
+        import pytron from 'pytron-client';
+
+        const browseBtn = document.getElementById('browseBtn');
+        const goBtn = document.getElementById('goBtn');
+        const pathInput = document.getElementById('pathInput');
+        const main = document.getElementById('main');
+
+        async function loadPath(path) {
+            if (!path) return;
+            pathInput.value = path;
+
+            const items = await pytron.list_contents(path);
+
+            if (items.error) {
+                main.innerHTML = `<div style="color: #ff4444; padding: 20px;">Error: ${items.error}</div>`;
+                return;
+            }
+
+            main.innerHTML = '<div class="file-list" id="fileList"></div>';
+            const list = document.getElementById('fileList');
+
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'item';
+                div.innerHTML = `
+                    <div class="icon">${item.is_dir ? '📁' : '📄'}</div>
+                    <div class="name">${item.name}</div>
+                `;
+
+                div.onclick = () => {
+                    if (item.is_dir) {
+                        loadPath(item.path);
+                    } else {
+                        pytron.open_path(item.path);
+                    }
+                };
+
+                list.appendChild(div);
+            });
+        }
+
+        browseBtn.onclick = async () => {
+            const path = await pytron.select_directory();
+            if (path) loadPath(path);
+        };
+
+        goBtn.onclick = () => loadPath(pathInput.value);
+        pathInput.onkeypress = (e) => { if (e.key === 'Enter') loadPath(pathInput.value); };
+    </script>
+</body>
+
+</html>

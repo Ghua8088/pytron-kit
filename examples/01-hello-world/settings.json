@@ -1,0 +1,9 @@
+{
+    "title": "Hello Pytron",
+    "dimensions": [
+        600,
+        400
+    ],
+    "url": "frontend/index.html",
+    "debug": true
+}

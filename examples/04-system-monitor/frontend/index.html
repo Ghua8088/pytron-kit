@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Monitor</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #0a0a0c;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 24px;
+            margin: 0;
+        }
+
+        .card {
+            background: #16161a;
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 20px;
+            width: 100%;
+            box-sizing: border-box;
+            margin-bottom: 16px;
+        }
+
+        .stat-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #888;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .progress-bg {
+            height: 8px;
+            background: #222;
+            border-radius: 4px;
+            margin-top: 12px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #3b82f6;
+            transition: width 0.5s ease-out;
+            width: 0%;
+        }
+
+        .cpu-fill {
+            background: #10b981;
+        }
+
+        .mem-fill {
+            background: #8b5cf6;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: none;
+            background: #333;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        button.active {
+            background: #ef4444;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+
+<body>
+    <h1 style="font-size: 1.25rem; margin-bottom: 24px;">System Analytics</h1>
+
+    <div class="card">
+        <div class="stat-header">
+            <span>CPU Usage</span>
+            <span id="cpuValue">0%</span>
+        </div>
+        <div class="progress-bg">
+            <div id="cpuBar" class="progress-fill cpu-fill"></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="stat-header">
+            <span>Memory Usage</span>
+            <span id="memValue">0%</span>
+        </div>
+        <div class="progress-bg">
+            <div id="memBar" class="progress-fill mem-fill"></div>
+        </div>
+    </div>
+
+    <button id="toggleBtn">Stop Monitoring</button>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "pytron-client": "../../node_modules/pytron-client/index.js"
+        }
+    }
+    </script>
+    <script type="module">
+        import pytron from 'pytron-client';
+
+        const cpuValue = document.getElementById('cpuValue');
+        const cpuBar = document.getElementById('cpuBar');
+        const memValue = document.getElementById('memValue');
+        const memBar = document.getElementById('memBar');
+        const toggleBtn = document.getElementById('toggleBtn');
+
+        function updateUI(state) {
+            if (state.cpu_usage !== undefined) {
+                cpuValue.innerText = `${state.cpu_usage}%`;
+                cpuBar.style.width = `${state.cpu_usage}%`;
+            }
+            if (state.memory_usage !== undefined) {
+                memValue.innerText = `${state.memory_usage}%`;
+                memBar.style.width = `${state.memory_usage}%`;
+            }
+
+            toggleBtn.innerText = state.is_monitoring ? 'Stop Monitoring' : 'Start Monitoring';
+            toggleBtn.className = state.is_monitoring ? '' : 'active';
+        }
+
+        // Handle initial state
+        updateUI(pytron.state);
+
+        // Listen for updates from the background thread
+        pytron.on('pytron:state-update', (change) => {
+            updateUI({ [change.key]: change.value });
+        });
+
+        toggleBtn.onclick = () => pytron.toggle_monitoring();
+    </script>
+</body>
+
+</html>

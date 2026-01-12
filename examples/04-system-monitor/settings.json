@@ -1,0 +1,9 @@
+{
+    "title": "Pytron System Monitor",
+    "dimensions": [
+        400,
+        500
+    ],
+    "url": "frontend/index.html",
+    "debug": true
+}

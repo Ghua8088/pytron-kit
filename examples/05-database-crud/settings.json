@@ -1,0 +1,9 @@
+{
+    "title": "Pytron Database Demo",
+    "dimensions": [
+        600,
+        700
+    ],
+    "url": "frontend/index.html",
+    "debug": true
+}

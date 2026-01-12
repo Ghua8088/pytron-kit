@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database CRUD</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #f3f4f6;
+            padding: 24px;
+            color: #1f2937;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .form {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            margin-bottom: 24px;
+        }
+
+        input,
+        textarea {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .note {
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-left: 4px solid #2563eb;
+        }
+
+        .note h3 {
+            margin: 0 0 8px 0;
+            font-size: 1.1rem;
+        }
+
+        .note p {
+            margin: 0;
+            color: #4b5563;
+            font-size: 0.95rem;
+        }
+
+        .del-btn {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 4px 8px;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>SQLite Notes</h1>
+
+        <div class="form">
+            <input type="text" id="title" placeholder="Note Title">
+            <textarea id="content" placeholder="Content..." rows="3"></textarea>
+            <button id="addBtn">Save Note</button>
+        </div>
+
+        <div id="notesList"></div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "pytron-client": "../../node_modules/pytron-client/index.js"
+        }
+    }
+    </script>
+    <script type="module">
+        import pytron from 'pytron-client';
+
+        const titleInput = document.getElementById('title');
+        const contentInput = document.getElementById('content');
+        const addBtn = document.getElementById('addBtn');
+        const notesList = document.getElementById('notesList');
+
+        async function refreshNotes() {
+            const notes = await pytron.get_notes();
+            notesList.innerHTML = '';
+            notes.forEach(note => {
+                const div = document.createElement('div');
+                div.className = 'note';
+                div.innerHTML = `
+                    <div>
+                        <h3>${note.title}</h3>
+                        <p>${note.content}</p>
+                    </div>
+                    <button class="del-btn">Delete</button>
+                `;
+                div.querySelector('.del-btn').onclick = async () => {
+                    await pytron.delete_note(note.id);
+                    refreshNotes();
+                };
+                notesList.appendChild(div);
+            });
+        }
+
+        addBtn.onclick = async () => {
+            const success = await pytron.add_note(titleInput.value, contentInput.value);
+            if (success) {
+                titleInput.value = '';
+                contentInput.value = '';
+                refreshNotes();
+            }
+        };
+
+        // Initial Load
+        refreshNotes();
+    </script>
+</body>
+
+</html>

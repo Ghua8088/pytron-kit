@@ -1,0 +1,10 @@
+{
+    "title": "Pytron Shortcuts & Tray",
+    "dimensions": [
+        500,
+        400
+    ],
+    "url": "frontend/index.html",
+    "debug": true,
+    "close_to_tray": true
+}

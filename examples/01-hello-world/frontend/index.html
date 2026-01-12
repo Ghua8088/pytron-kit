@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello Pytron</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #1e1e2f 0%, #2d2d44 100%);
+            color: white;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        h1 {
+            margin-bottom: 20px;
+        }
+
+        input {
+            padding: 10px;
+            border-radius: 6px;
+            border: none;
+            margin-bottom: 15px;
+            width: 200px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border-radius: 6px;
+            border: none;
+            background: #6200ee;
+            color: white;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #3700b3;
+        }
+
+        #result {
+            margin-top: 20px;
+            font-weight: bold;
+            color: #03dac6;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Pytron Hello World</h1>
+        <input type="text" id="nameInput" placeholder="Enter your name">
+        <br>
+        <button id="greetBtn">Greet Me</button>
+        <div id="result"></div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "pytron-client": "../../node_modules/pytron-client/index.js"
+        }
+    }
+    </script>
+    <script type="module">
+        import pytron from 'pytron-client';
+
+        const nameInput = document.getElementById('nameInput');
+        const greetBtn = document.getElementById('greetBtn');
+        const resultDiv = document.getElementById('result');
+
+        greetBtn.addEventListener('click', async () => {
+            const name = nameInput.value || 'Developer';
+            const message = await pytron.greet(name);
+            resultDiv.innerText = message;
+        });
+    </script>
+</body>
+
+</html>

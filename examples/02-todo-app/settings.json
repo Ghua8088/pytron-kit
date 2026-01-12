@@ -1,0 +1,9 @@
+{
+    "title": "Pytron Todo App",
+    "dimensions": [
+        500,
+        600
+    ],
+    "url": "frontend/index.html",
+    "debug": true
+}
