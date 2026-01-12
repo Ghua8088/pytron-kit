@@ -137,14 +137,14 @@ def save_file_dialog(w, title, default_path=None, default_name=None, file_types=
 
 def open_folder_dialog(w, title, default_path=None):
     shell32 = ctypes.windll.shell32
-    
+
     # We MUST define argtypes and restype for x64 pointer safety
     shell32.SHBrowseForFolderW.argtypes = [ctypes.POINTER(BROWSEINFOW)]
     shell32.SHBrowseForFolderW.restype = ctypes.c_void_p
-    
+
     shell32.SHGetPathFromIDListW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
     shell32.SHGetPathFromIDListW.restype = ctypes.wintypes.BOOL
-    
+
     shell32.ILFree.argtypes = [ctypes.c_void_p]
     shell32.ILFree.restype = None
 
