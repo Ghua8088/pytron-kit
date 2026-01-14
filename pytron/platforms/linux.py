@@ -11,6 +11,9 @@ class LinuxImplementation(PlatformInterface):
     def minimize(self, w):
         window.minimize(w)
 
+    def center(self, w):
+        window.center(w)
+
     def set_bounds(self, w, x, y, width, height):
         window.set_bounds(w, x, y, width, height)
 

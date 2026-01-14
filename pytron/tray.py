@@ -5,7 +5,11 @@ import threading
 import logging
 from typing import Callable, List, Dict, Optional
 from .utils import get_resource_path
-import ctypes.wintypes
+
+# Platform-specific imports
+if sys.platform == "win32":
+    import ctypes.wintypes
+    from .platforms.windows_ops.constants import NOTIFYICONDATAW
 
 # Windows Constants
 WM_USER = 0x0400
@@ -27,27 +31,6 @@ MIIM_TYPE = 0x0010
 MIIM_DATA = 0x0020
 MFT_STRING = 0x0000
 MFT_SEPARATOR = 0x0800
-
-
-class NOTIFYICONDATAW(ctypes.Structure):
-    _pack_ = 8  # Force 8-byte packing for x64
-    _fields_ = [
-        ("cbSize", ctypes.c_uint),
-        ("hWnd", ctypes.c_void_p),
-        ("uID", ctypes.c_uint),
-        ("uFlags", ctypes.c_uint),
-        ("uCallbackMessage", ctypes.c_uint),
-        ("hIcon", ctypes.c_void_p),
-        ("szTip", ctypes.c_wchar * 128),
-        ("dwState", ctypes.c_uint),
-        ("dwStateMask", ctypes.c_uint),
-        ("szInfo", ctypes.c_wchar * 256),
-        ("uTimeout", ctypes.c_uint),
-        ("szInfoTitle", ctypes.c_wchar * 64),
-        ("dwInfoFlags", ctypes.c_uint),
-        ("guidItem", ctypes.c_ubyte * 16),
-        ("hBalloonIcon", ctypes.c_void_p),
-    ]
 
 
 class MenuItem:
@@ -217,6 +200,7 @@ class SystemTray:
         def run_tray_thread():
             user32 = ctypes.windll.user32
             kernel32 = ctypes.windll.kernel32
+            shell32 = ctypes.windll.shell32
 
             # --- Definitions ---
             user32.DefWindowProcW.argtypes = [
@@ -241,7 +225,14 @@ class SystemTray:
                 ctypes.c_void_p,
             ]
             user32.CreateWindowExW.restype = ctypes.c_void_p
-            ctypes.windll.kernel32.GetModuleHandleW.restype = ctypes.c_void_p
+            kernel32.GetModuleHandleW.restype = ctypes.c_void_p
+
+            # Ensure we use the shared NOTIFYICONDATAW definition
+            shell32.Shell_NotifyIconW.argtypes = [
+                ctypes.c_ulong,
+                ctypes.POINTER(NOTIFYICONDATAW),
+            ]
+            shell32.Shell_NotifyIconW.restype = ctypes.wintypes.BOOL
 
             def window_proc(hwnd, msg, wparam, lparam):
                 if msg == WM_TRAYICON:
@@ -299,28 +290,30 @@ class SystemTray:
                 IMAGE_ICON = 1
                 LR_LOADFROMFILE = 0x00000010
                 r_path = get_resource_path(self.icon_path)
-                print(f"[Tray] Attempting to load icon from: {r_path}")
+                self.logger.debug(f"Attempting to load icon from: {r_path}")
 
                 # Load 16x16 for logic
                 self._hicon = user32.LoadImageW(
-                    0, str(r_path), IMAGE_ICON, 16, 16, LR_LOADFROMFILE
+                    None, str(r_path), IMAGE_ICON, 16, 16, LR_LOADFROMFILE
                 )
 
                 if not self._hicon:
                     err = ctypes.GetLastError()
-                    print(f"[Tray] Failed to load 16x16 icon. Error: {err}")
+                    self.logger.warning(
+                        f"Failed to load 16x16 icon. Error: {err}. Retrying with default size."
+                    )
                     # Retry with default size
                     self._hicon = user32.LoadImageW(
-                        0, str(r_path), IMAGE_ICON, 0, 0, LR_LOADFROMFILE
+                        None, str(r_path), IMAGE_ICON, 0, 0, LR_LOADFROMFILE
                     )
                     if not self._hicon:
-                        print(
-                            f"[Tray] Failed to load default size icon. Error: {ctypes.GetLastError()}"
+                        self.logger.error(
+                            f"Failed to load default size icon. Error: {ctypes.GetLastError()}"
                         )
 
             if not self._hicon:
-                print("[Tray] Fallback to system application icon")
-                self._hicon = user32.LoadIconW(0, 32512)
+                self.logger.warning("Fallback to system application icon")
+                self._hicon = user32.LoadIconW(0, ctypes.c_void_p(32512))
 
             # 4. Add to Tray
             nid = NOTIFYICONDATAW()
@@ -332,7 +325,7 @@ class SystemTray:
             nid.hIcon = self._hicon
             nid.szTip = self.title[:127]
 
-            ctypes.windll.shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
+            shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
 
             # Signal that we are ready!
             ready_event.set()
@@ -383,11 +376,25 @@ class SystemTray:
             # GetMessage is blocking. We need to post a dummy message or WM_NULL/WM_CLOSE
             ctypes.windll.user32.PostMessageW(self._hwnd, 0x0010, 0, 0)  # WM_CLOSE
 
+        # Wait for thread to finish to prevent zombies
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=2.0)
+            if self._thread.is_alive():
+                self.logger.warning("Tray thread did not exit cleanly.")
+
         # Also delete icon
         if self._hwnd:
             nid = NOTIFYICONDATAW()
             nid.cbSize = ctypes.sizeof(NOTIFYICONDATAW)
             nid.hWnd = self._hwnd
             nid.uID = 1
-            ctypes.windll.shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid))
+
+            shell32 = ctypes.windll.shell32
+            # Use strict argtypes with shared structure
+            shell32.Shell_NotifyIconW.argtypes = [
+                ctypes.c_ulong,
+                ctypes.POINTER(NOTIFYICONDATAW),
+            ]
+
+            shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid))
             self._hwnd = None

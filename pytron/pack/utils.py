@@ -3,6 +3,8 @@ import sys
 import shutil
 from pathlib import Path
 from ..console import console, log
+import fnmatch
+from ..commands.helpers import get_config
 
 
 def cleanup_dist(dist_path: Path, preserve_tk: bool = False):
@@ -54,6 +56,9 @@ def cleanup_dist(dist_path: Path, preserve_tk: bool = False):
     else:
         log("Preserving Tcl/Tk dependencies (required for splash screen)", style="info")
 
+    config = get_config()
+    exclude_patterns = config.get("exclude_patterns", [])
+
     log(f"Optimizing build directory: {target_path}")
 
     # Walk top-down so we can modify dirs in-place to skip traversing removed dirs
@@ -72,9 +77,27 @@ def cleanup_dist(dist_path: Path, preserve_tk: bool = False):
 
         # Remove files
         for f in files:
-            if f in remove_names or f.endswith(
-                ".pdb"
-            ):  # Also remove debug symbols if any
+            should_remove = f in remove_names or f.endswith(".pdb")
+
+            if not should_remove and exclude_patterns:
+                for pat in exclude_patterns:
+                    if fnmatch.fnmatch(f, pat):
+                        should_remove = True
+                        break
+
+            if should_remove:
+                # SAFETY: Protect Electron Shell package.json
+                # The Chrome engine REQUIRES package.json in its shell folder to boot.
+                if f == "package.json":
+                    # Check consistency of path
+                    norm_root = os.path.normpath(root).replace("\\", "/")
+                    # If we are inside the chrome shell directory, DO NOT DELETE.
+                    if "pytron/engines/chrome/shell" in norm_root:
+                        console.print(
+                            f"  - Preserved critical entry point: {f}", style="dim"
+                        )
+                        continue
+
                 full_path = Path(root) / f
                 try:
                     os.remove(full_path)

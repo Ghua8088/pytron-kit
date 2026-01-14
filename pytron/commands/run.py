@@ -8,6 +8,7 @@ import re
 
 from pathlib import Path
 from ..console import log, console
+from rich.text import Text
 from .helpers import (
     locate_frontend_dir,
     run_frontend_build,
@@ -98,6 +99,15 @@ def run_dev_mode(script: Path, extra_args: list[str], engine: str = None) -> int
                     f"Found 'dev' script. Starting development server using {provider}...",
                     style="success",
                 )
+
+                # Setup Environment
+                proc_env = os.environ.copy()
+                dev_port = config.get("dev_port")
+                if dev_port:
+                    proc_env["PORT"] = str(dev_port)
+                    # Force color for nicer output
+                    proc_env["FORCE_COLOR"] = "1"
+
                 # We need to capture output to find the port, so PIPE it.
                 # But we also want the user to see it.
                 # We'll use a thread to read stdout and look for the URL.
@@ -107,6 +117,7 @@ def run_dev_mode(script: Path, extra_args: list[str], engine: str = None) -> int
                     shell=(sys.platform == "win32"),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
+                    env=proc_env,
                     text=True,
                     bufsize=1,
                 )
@@ -129,9 +140,10 @@ def run_dev_mode(script: Path, extra_args: list[str], engine: str = None) -> int
                             line = npm_proc.stdout.readline()
                             if not line:
                                 break
-                            console.print(
-                                f"[dim][{provider}][/dim] {line.strip()}", style="dim"
-                            )  # Echo to console
+                            # Use Text.from_ansi to handle colors correctly
+                            prefix = Text(f"[{provider}] ", style="dim")
+                            content = Text.from_ansi(line.strip())
+                            console.print(prefix + content)
 
                             if not dev_server_url:
                                 # Strip ANSI codes to ensure clean matching
@@ -252,13 +264,18 @@ def run_dev_mode(script: Path, extra_args: list[str], engine: str = None) -> int
         if npm_proc:
             log("Stopping frontend watcher...", style="dim")
             if sys.platform == "win32":
-                # Need to be careful killing npm on windows, often it spawns node
+                # Force kill the process tree to avoid "Terminate batch job (Y/N)?"
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(npm_proc.pid)],
-                    capture_output=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
             else:
-                npm_proc.terminate()
+                try:
+                    npm_proc.terminate()
+                    npm_proc.wait(timeout=2)
+                except Exception:
+                    npm_proc.kill()
 
     return 0
 
@@ -282,12 +299,14 @@ def cmd_run(args: argparse.Namespace) -> int:
                 return 1
 
     if args.dev:
-        engine = args.engine
+        engine = "chrome" if getattr(args, "chrome", False) else args.engine
         return run_dev_mode(path, args.extra_args, engine=engine)
 
     python_exe = get_python_executable()
     env = os.environ.copy()
-    if args.engine:
+    if getattr(args, "chrome", False):
+        env["PYTRON_ENGINE"] = "chrome"
+    elif args.engine:
         env["PYTRON_ENGINE"] = args.engine
 
     cmd = [python_exe, str(path)] + (args.extra_args or [])

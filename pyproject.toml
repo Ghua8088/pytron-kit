@@ -9,7 +9,7 @@ namespaces = false
 
 [project]
 name = "pytron-kit"
-version = "0.3.2"
+version = "0.3.5"
 description = "An Electron-like library for Python to build Cross Platform Apps"
 readme = "README.md"
 requires-python = ">=3.7"
@@ -66,6 +66,8 @@ pytron = [
     "utf8_hook.py", 
     "manifests/*",
     "dependancies/**/*", 
+    "engines/**/*",
+    "engines/chrome/shell/*",
     "ai_guide.md",
     "platforms/android/shell/app/src/main/assets/python/python314.zip",
     "platforms/android/shell/app/src/main/assets/python/main.py",

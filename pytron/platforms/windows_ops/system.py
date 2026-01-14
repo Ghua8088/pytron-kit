@@ -9,51 +9,150 @@ try:
 except ImportError:
     winreg = None
 
+# -------------------------------------------------------------------
+# Hardened Library Wrappers
+# -------------------------------------------------------------------
+user32 = ctypes.windll.user32
+shell32 = ctypes.windll.shell32
+kernel32 = ctypes.windll.kernel32
+
+# --- USER32 ---
+user32.LoadImageW.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_wchar_p,
+    ctypes.c_uint,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_uint,
+]
+user32.LoadImageW.restype = ctypes.c_void_p  # HANDLE
+
+user32.LoadIconW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]  # Used with ID
+user32.LoadIconW.restype = ctypes.c_void_p
+
+user32.MessageBoxW.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_wchar_p,
+    ctypes.c_wchar_p,
+    ctypes.c_uint,
+]
+user32.MessageBoxW.restype = ctypes.c_int
+
+user32.SendMessageW.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_uint,
+    ctypes.wintypes.WPARAM,
+    ctypes.wintypes.LPARAM,
+]
+user32.SendMessageW.restype = ctypes.c_longlong  # LRESULT can be 64-bit
+
+user32.OpenClipboard.argtypes = [ctypes.c_void_p]
+user32.OpenClipboard.restype = ctypes.wintypes.BOOL
+
+user32.EmptyClipboard.argtypes = []
+user32.EmptyClipboard.restype = ctypes.wintypes.BOOL
+
+user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+user32.SetClipboardData.restype = ctypes.c_void_p
+
+user32.CloseClipboard.argtypes = []
+user32.CloseClipboard.restype = ctypes.wintypes.BOOL
+
+user32.GetClipboardData.argtypes = [ctypes.c_uint]
+user32.GetClipboardData.restype = ctypes.c_void_p
+
+# --- SHELL32 ---
+shell32.Shell_NotifyIconW.argtypes = [ctypes.c_ulong, ctypes.POINTER(NOTIFYICONDATAW)]
+shell32.Shell_NotifyIconW.restype = ctypes.wintypes.BOOL
+
+shell32.SetCurrentProcessExplicitAppUserModelID.argtypes = [ctypes.c_wchar_p]
+shell32.SetCurrentProcessExplicitAppUserModelID.restype = ctypes.c_long  # HRESULT
+
+shell32.SHBrowseForFolderW.argtypes = [ctypes.POINTER(BROWSEINFOW)]
+shell32.SHBrowseForFolderW.restype = ctypes.c_void_p  # PIDLIST_ABSOLUTE
+
+shell32.SHGetPathFromIDListW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+shell32.SHGetPathFromIDListW.restype = ctypes.wintypes.BOOL
+
+shell32.ILFree.argtypes = [ctypes.c_void_p]
+shell32.ILFree.restype = None
+
+# --- KERNEL32 ---
+kernel32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+kernel32.GlobalAlloc.restype = ctypes.c_void_p
+
+kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+kernel32.GlobalLock.restype = ctypes.c_void_p
+
+kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+kernel32.GlobalUnlock.restype = ctypes.wintypes.BOOL
+
+# --- COMDLG32 ---
+comdlg32 = ctypes.windll.comdlg32
+comdlg32.GetOpenFileNameW.argtypes = [ctypes.POINTER(OPENFILENAMEW)]
+comdlg32.GetOpenFileNameW.restype = ctypes.wintypes.BOOL
+
+comdlg32.GetSaveFileNameW.argtypes = [ctypes.POINTER(OPENFILENAMEW)]
+comdlg32.GetSaveFileNameW.restype = ctypes.wintypes.BOOL
+
+# -------------------------------------------------------------------
+# Operations
+# -------------------------------------------------------------------
+
 
 def notification(w, title, message, icon=None):
-    shell32 = ctypes.windll.shell32
-    user32 = ctypes.windll.user32
-
     try:
+        hwnd = get_hwnd(w)
+        # Even if hwnd is None (e.g. hidden mode), we might need a dummy HWND for the tray api.
+        # However, linking it to the main webview HWND is standard.
+        if not hwnd:
+            print(f"[Pytron] Notification skipped: No valid HWND for window {w}")
+            return
+
         nid = NOTIFYICONDATAW()
         nid.cbSize = ctypes.sizeof(NOTIFYICONDATAW)
-        nid.hWnd = get_hwnd(w)
-        nid.uID = 2000
+        nid.hWnd = hwnd
+        nid.uID = 2000  # Unique ID for "Toast" source
 
-        nid.uFlags = NIF_INFO | NIF_ICON | NIF_TIP
-
-        nid.szInfo = message[:255]
-        nid.szInfoTitle = title[:63]
-        nid.szTip = title[:127] if title else "Notification"
-        nid.dwInfoFlags = NIIF_INFO
-
+        # 1. Ensure Icon is Valid
         h_icon = 0
         if icon and os.path.exists(icon):
-            h_icon = user32.LoadImageW(
-                0,
-                str(icon),
-                1,
-                16,
-                16,
-                0x00000010,
-            )
-
+            h_icon = user32.LoadImageW(None, str(icon), 1, 16, 16, 0x00000010)
         if not h_icon:
-            h_icon = user32.LoadIconW(0, 32512)
+            h_icon = user32.LoadIconW(None, ctypes.c_void_p(32512))  # IDI_APPLICATION
 
         nid.hIcon = h_icon
 
-        success = shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
-        if not success:
-            success = shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(nid))
+        # 2. Strict ctypes definition (Local Override similar to tray.py)
+        shell32.Shell_NotifyIconW.argtypes = [
+            ctypes.c_ulong,
+            ctypes.POINTER(NOTIFYICONDATAW),
+        ]
+        shell32.Shell_NotifyIconW.restype = ctypes.wintypes.BOOL
 
-        if not success:
-            err = ctypes.GetLastError()
-            print(f"[Pytron] Notification Failed. Error Code: {err}")
-            return
+        # 3. ADD the Icon first (if not exists)
+        # We need NIF_ICON so it exists. We assume it might already exist.
+        nid.uFlags = NIF_ICON | NIF_TIP
+        nid.szTip = title[:127] if title else "Notification"
 
+        # Try ADD. If it fails, it might already exist, so we treat it as success-ish
+        shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
+
+        # 4. Set Version to 4 (Vista+) to enable modern "Balloon/Toast" behavior
         nid.uVersion = NOTIFYICON_VERSION_4
         shell32.Shell_NotifyIconW(NIM_SETVERSION, ctypes.byref(nid))
+
+        # 5. Show The Toast (MODIFY)
+        nid.uFlags = NIF_INFO | NIF_ICON | NIF_TIP
+        nid.szInfo = message[:255]
+        nid.szInfoTitle = title[:63]
+        nid.dwInfoFlags = NIIF_INFO  # | NIIF_LARGE_ICON if we had a large icon
+
+        success = shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(nid))
+
+        if not success:
+            err = ctypes.get_last_error()
+            print(f"[Pytron] Notification Failed. Error Code: {err}")
 
     except Exception as e:
         print(f"[Pytron] Notification Exception: {e}")
@@ -61,7 +160,7 @@ def notification(w, title, message, icon=None):
 
 def message_box(w, title, message, style=0):
     hwnd = get_hwnd(w)
-    return ctypes.windll.user32.MessageBoxW(hwnd, message, title, style)
+    return user32.MessageBoxW(hwnd, message, title, style)
 
 
 def set_window_icon(w, icon_path):
@@ -69,13 +168,16 @@ def set_window_icon(w, icon_path):
         return
     hwnd = get_hwnd(w)
     try:
-        h_small = ctypes.windll.user32.LoadImageW(0, str(icon_path), 1, 16, 16, 0x10)
-        if h_small:
-            ctypes.windll.user32.SendMessageW(hwnd, 0x0080, 0, h_small)
+        # LR_LOADFROMFILE | LR_DEFAULTSIZE
+        flags = 0x00000010 | 0x00000040
 
-        h_big = ctypes.windll.user32.LoadImageW(0, str(icon_path), 1, 32, 32, 0x10)
+        h_small = user32.LoadImageW(None, str(icon_path), 1, 16, 16, flags)
+        if h_small:
+            user32.SendMessageW(hwnd, 0x0080, 0, h_small)  # WM_SETICON, ICON_SMALL
+
+        h_big = user32.LoadImageW(None, str(icon_path), 1, 32, 32, flags)
         if h_big:
-            ctypes.windll.user32.SendMessageW(hwnd, 0x0080, 1, h_big)
+            user32.SendMessageW(hwnd, 0x0080, 1, h_big)  # WM_SETICON, ICON_BIG
     except Exception as e:
         print(f"Icon error: {e}")
 
@@ -114,7 +216,7 @@ def open_file_dialog(w, title, default_path=None, file_types=None):
     ofn, buff = _prepare_ofn(w, title, default_path, file_types)
     ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR
 
-    if ctypes.windll.comdlg32.GetOpenFileNameW(ctypes.byref(ofn)):
+    if comdlg32.GetOpenFileNameW(ctypes.byref(ofn)):
         return buff.value
     return None
 
@@ -130,24 +232,12 @@ def save_file_dialog(w, title, default_path=None, default_name=None, file_types=
     ofn, buff = _prepare_ofn(w, title, path, file_types)
     ofn.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR
 
-    if ctypes.windll.comdlg32.GetSaveFileNameW(ctypes.byref(ofn)):
+    if comdlg32.GetSaveFileNameW(ctypes.byref(ofn)):
         return buff.value
     return None
 
 
 def open_folder_dialog(w, title, default_path=None):
-    shell32 = ctypes.windll.shell32
-
-    # We MUST define argtypes and restype for x64 pointer safety
-    shell32.SHBrowseForFolderW.argtypes = [ctypes.POINTER(BROWSEINFOW)]
-    shell32.SHBrowseForFolderW.restype = ctypes.c_void_p
-
-    shell32.SHGetPathFromIDListW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
-    shell32.SHGetPathFromIDListW.restype = ctypes.wintypes.BOOL
-
-    shell32.ILFree.argtypes = [ctypes.c_void_p]
-    shell32.ILFree.restype = None
-
     bif = BROWSEINFOW()
     bif.hwndOwner = get_hwnd(w)
     bif.lpszTitle = title
@@ -171,8 +261,6 @@ def register_protocol(scheme):
         if getattr(sys, "frozen", False):
             command = f'"{exe}" "%1"'
         else:
-            # Dev mode: python.exe app.py "%1"
-            # Use __main__.__file__ to get the absolute path to the running script
             main_file = os.path.abspath(sys.modules["__main__"].__file__)
             command = f'"{exe}" "{main_file}" "%1"'
 
@@ -214,48 +302,14 @@ def set_launch_on_boot(app_name, exe_path, enable=True):
 
 def set_app_id(app_id):
     try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+        shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
     except Exception:
         pass
 
 
-def set_window_icon(w, icon_path):
-    """Sets the icon for the specified window."""
-    try:
-        hwnd = get_hwnd(w)
-        if not hwnd or not icon_path or not os.path.exists(icon_path):
-            return
-
-        user32 = ctypes.windll.user32
-
-        # Determine if it's an .ico or something else
-        # Windows requires HICON, so we use LoadImage
-        icon_path = str(os.path.abspath(icon_path))
-
-        # Load small icon (16x16)
-        h_icon_small = user32.LoadImageW(
-            0,
-            icon_path,
-            1,
-            16,
-            16,
-            0x00000010 | 0x00000040,  # LR_LOADFROMFILE | LR_DEFAULTSIZE
-        )
-        # Load large icon (32x32)
-        h_icon_large = user32.LoadImageW(
-            0, icon_path, 1, 32, 32, 0x00000010 | 0x00000040
-        )
-
-        if h_icon_small:
-            user32.SendMessageW(hwnd, 0x0080, 0, h_icon_small)  # WM_SETICON, ICON_SMALL
-        if h_icon_large:
-            user32.SendMessageW(hwnd, 0x0080, 1, h_icon_large)  # WM_SETICON, ICON_BIG
-
-    except Exception as e:
-        print(f"[Pytron] Failed to set window icon: {e}")
-
-
-# Taskbar Progress
+# Taskbar Progress (Using COM - Requires valid ITaskbarList3 definition)
+# For robustness, we catch exceptions but don't strictly type COM interfaces here
+# as that requires a larger struct definition block which is already present but complex.
 _taskbar_list = None
 
 
@@ -276,7 +330,6 @@ def _init_taskbar():
         class ITaskbarList3(IUnknown):
             _iid_ = GUID("{EA1AFB91-9E28-4B86-90E9-9E9F8A5EEFAF}")
             _methods_ = [
-                # ITaskbarList
                 COMMETHOD([], HRESULT, "HrInit"),
                 COMMETHOD(
                     [], HRESULT, "AddTab", (["in"], ctypes.wintypes.HWND, "hwnd")
@@ -290,7 +343,6 @@ def _init_taskbar():
                 COMMETHOD(
                     [], HRESULT, "SetActiveAlt", (["in"], ctypes.wintypes.HWND, "hwnd")
                 ),
-                # ITaskbarList2
                 COMMETHOD(
                     [],
                     HRESULT,
@@ -298,7 +350,6 @@ def _init_taskbar():
                     (["in"], ctypes.wintypes.HWND, "hwnd"),
                     (["in"], ctypes.c_int, "fFullscreen"),
                 ),
-                # ITaskbarList3
                 COMMETHOD(
                     [],
                     HRESULT,
@@ -348,35 +399,23 @@ def set_taskbar_progress(w, state="normal", value=0, max_value=100):
         pass
 
 
-# Clipboard Support (Native Win32 implementation)
 def set_clipboard_text(text: str):
     """Copies text to the system clipboard."""
     try:
-        user32 = ctypes.windll.user32
-        kernel32 = ctypes.windll.kernel32
-
-        # 1. Open Clipboard
         if not user32.OpenClipboard(0):
             return False
 
-        # 2. Empty Clipboard
         user32.EmptyClipboard()
 
-        # 3. Alloc Memory for UTF-16 text
-        # (len + 1 for null terminator) * 2 bytes per char
         text_unicode = text
         size = (len(text_unicode) + 1) * 2
         h_mem = kernel32.GlobalAlloc(0x0042, size)  # GMEM_MOVEABLE | GMEM_ZEROINIT
 
-        # 4. Lock Memory and copy
         p_mem = kernel32.GlobalLock(h_mem)
         ctypes.memmove(p_mem, text_unicode, size)
         kernel32.GlobalUnlock(h_mem)
 
-        # 5. Set Data to Clipboard (CF_UNICODETEXT = 13)
-        user32.SetClipboardData(13, h_mem)
-
-        # 6. Close Clipboard
+        user32.SetClipboardData(13, h_mem)  # CF_UNICODETEXT
         user32.CloseClipboard()
         return True
     except Exception as e:
@@ -387,13 +426,9 @@ def set_clipboard_text(text: str):
 def get_clipboard_text():
     """Returns text from the system clipboard."""
     try:
-        user32 = ctypes.windll.user32
-        kernel32 = ctypes.windll.kernel32
-
         if not user32.OpenClipboard(0):
             return None
 
-        # CF_UNICODETEXT = 13
         h_mem = user32.GetClipboardData(13)
         if not h_mem:
             user32.CloseClipboard()
@@ -413,7 +448,6 @@ def get_clipboard_text():
 def get_system_info():
     """Returns platform core information."""
     import platform
-    import psutil  # Note: Added as dynamic check to avoid dependency blowup if not installed
 
     info = {
         "os": platform.system(),
@@ -434,11 +468,6 @@ def get_system_info():
         pass
 
     return info
-
-
-# -------------------------------------------------------------------------
-# Native Drag & Drop Support - REMOVED AS PER USER REQUEST
-# -------------------------------------------------------------------------
 
 
 def enable_drag_drop_safe(w, callback):

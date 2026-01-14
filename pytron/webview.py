@@ -39,23 +39,73 @@ class Webview:
         self.logger = logging.getLogger("Pytron.Webview")
         self.id = config.get("id") or str(int(time.time() * 1000))
 
-        # SECURITY/CORS: Fix for "origin 'null'" and CORS issues with file:// and ES Modules in WebView2.
-        # This allows Vite builds (type="module") to load correctly over the file:// scheme.
-        if not IS_ANDROID and platform.system() == "Windows":
-            # --allow-file-access-from-files: Allows file:// to fetch other file:// resources.
-            # --disable-web-security: Permissive mode for complex ESM module graphs over custom schemes/file.
-            args = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
+        # 1. RESOLVE APP ROOT EARLY (Essential for local runtime detection)
+        if getattr(sys, "frozen", False):
+            self._app_root = pathlib.Path(sys.executable).parent
+            if hasattr(sys, "_MEIPASS"):
+                self._app_root = pathlib.Path(sys._MEIPASS)
+        else:
+            main_script = (
+                sys.modules["__main__"].__file__
+                if "__main__" in sys.modules
+                and hasattr(sys.modules["__main__"], "__file__")
+                else None
+            )
+            if main_script:
+                self._app_root = pathlib.Path(main_script).parent
+            else:
+                self._app_root = pathlib.Path.cwd()
 
-            # IMPROVEMENT: Only disable web security if requested, default to safer mode
-            if "--allow-file-access-from-files" not in args:
-                args = f"{args} --allow-file-access-from-files"
+        # 2. BROWSER ENGINE TUNING
+        if not IS_ANDROID:
+            if platform.system() == "Windows":
+                # --- FIXED RUNTIME SUPPORT (PRO ENGINE: WINDOWS) ---
+                fixed_runtime = config.get("engine_path")
+                if not fixed_runtime:
+                    for r_dir in ["runtime", "webview2", "bin/webview2"]:
+                        candidate = self._app_root / r_dir
+                        if candidate.exists():
+                            fixed_runtime = str(candidate)
+                            break
 
-            if (
-                config.get("disable_web_security", False) or config.get("debug", False)
-            ) and "--disable-web-security" not in args:
-                args = f"{args} --disable-web-security"
+                if fixed_runtime:
+                    abs_path = os.path.abspath(fixed_runtime)
+                    if os.path.exists(abs_path):
+                        os.environ["WEBVIEW2_BROWSER_EXECUTABLE_FOLDER"] = abs_path
+                        self.logger.info(
+                            f"Engine: Using Fixed WebView2 Runtime at {abs_path}"
+                        )
 
-            os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = args.strip()
+                # --- CUSTOM USER DATA PATH (WINDOWS) ---
+                user_data = config.get("user_data_path")
+                if user_data:
+                    os.environ["WEBVIEW2_USER_DATA_FOLDER"] = os.path.abspath(user_data)
+
+                args = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
+                if "--allow-file-access-from-files" not in args:
+                    args = f"{args} --allow-file-access-from-files"
+                if (
+                    config.get("disable_web_security", False)
+                    or config.get("debug", False)
+                ) and "--disable-web-security" not in args:
+                    args = f"{args} --disable-web-security"
+                os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = args.strip()
+
+            elif platform.system() == "Linux":
+                # --- LINUX TUNING (WebKitGTK) ---
+                # Hardware acceleration can sometimes cause flickers on Linux
+                if config.get("disable_gpu", False):
+                    os.environ["WEBKIT_DISABLE_COMPOSITING_MODE"] = "1"
+
+                # Sandbox control (sometimes needed for AppImages)
+                if config.get("disable_sandbox", False):
+                    os.environ["WEBKIT_FORCE_SANDBOX"] = "0"
+
+            elif platform.system() == "Darwin":
+                # --- macOS TUNING (WebKit) ---
+                # Explicitly enable remote inspection for non-debug builds if requested
+                if config.get("debug", False) or config.get("remote_inspection", False):
+                    os.environ["WebKitDeveloperExtras"] = "1"
 
         # PERFORMANCE: Use shared thread pool from App if available
         self.app = config.get("__app__")
@@ -66,7 +116,7 @@ class Webview:
                 "concurrent.futures"
             ).futures.ThreadPoolExecutor(max_workers=5)
 
-        self._gc_protector = deque(maxlen=200)  # Increased to handle bursts of updates
+        self._gc_protector = deque(maxlen=200)
         self._bound_functions = {}
         self._served_data = {}
 
@@ -75,11 +125,9 @@ class Webview:
         # ------------------------------------------------
         shield_ptr = os.environ.get("PYTRON_SHIELD_WINDOW_PTR")
         if shield_ptr:
-            # Use the window created by the Rust bootloader
             self.w = ctypes.c_void_p(int(shield_ptr))
             self.logger.debug(f"Shielded Mode: Attaching to native window {shield_ptr}")
         else:
-            # Fix: Store as c_void_p object to ensure consistent pointer handling on 64-bit systems
             raw_ptr = lib.webview_create(int(config.get("debug", False)), None)
             self.w = ctypes.c_void_p(raw_ptr)
 
@@ -89,7 +137,7 @@ class Webview:
         # PLATFORM INITIALIZATION
         # ------------------------------------------------
         CURRENT_PLATFORM = platform.system()
-        self._platform = PlatformInterface()
+        self._platform = None
 
         if not IS_ANDROID:
             if CURRENT_PLATFORM == "Windows":
@@ -104,6 +152,41 @@ class Webview:
                 from .platforms.darwin import DarwinImplementation
 
                 self._platform = DarwinImplementation()
+
+        # Fallback for Android or unsupported platforms to ensure stability
+        # We must provide a concrete implementation of the strict PlatformInterface
+        if self._platform is None:
+            # Inline definition to avoid circular imports or extra files for a semantic fallback
+            from .platforms.interface import PlatformInterface, WindowHandle
+
+            class _NoOpPlatform(PlatformInterface):
+                def show(self, w: WindowHandle) -> None:
+                    pass
+
+                def hide(self, w: WindowHandle) -> None:
+                    pass
+
+                def close(self, w: WindowHandle) -> None:
+                    pass
+
+                def minimize(self, w: WindowHandle) -> None:
+                    pass
+
+                def toggle_maximize(self, w: WindowHandle) -> bool:
+                    return False
+
+                def set_bounds(
+                    self, w: WindowHandle, x: int, y: int, w_val: int, h: int
+                ) -> None:
+                    pass
+
+                def is_visible(self, w: WindowHandle) -> bool:
+                    return True
+
+                def center(self, w: WindowHandle) -> None:
+                    pass
+
+            self._platform = _NoOpPlatform()
 
         # Default Bindings
         self.bind("pytron_minimize", lambda: self.minimize(), run_in_thread=False)
@@ -151,7 +234,7 @@ class Webview:
             run_in_thread=False,
         )
 
-        # Native Drag &amp; Drop (From JS Bridge as fallback/primary for WebView)
+        # Native Drag & Drop (From JS Bridge as fallback/primary for WebView)
         def _handle_js_drop(files):
             print(f"[Pytron] Bridge received drop: {files}")
             if (
@@ -236,134 +319,15 @@ class Webview:
 
         self.bind("pytron_get_asset", _legacy_get_asset, run_in_thread=True)
 
-        # Inject Virtual Fetch Interceptor
-        # This allows the frontend to call fetch('pytron://...') for heavy assets
-        # and get binary data with zero base64 overhead.
-        init_js = """
-        (function() {
-            window.__pytron_fetch_interceptor_active = true;
-            const originalFetch = window.fetch;
-            
-            function getPytronKey(url) {
-                if (!url || typeof url !== 'string') return null;
-                const match = url.match(/pytron:\\/\\/([^?#]+)/);
-                return match ? match[1] : null;
-            }
-
-            window.fetch = async (input, init) => {
-                const url = typeof input === 'string' ? input : (input ? input.url : '');
-                const key = getPytronKey(url);
-                
-                if (key) {
-                    console.log("[Pytron VAP] Intercepting fetch for key:", key);
-                    const asset = await window.__pytron_vap_get(key);
-                    if (asset) {
-                        const bytes = new Uint8Array(asset.raw.length);
-                        for (let i = 0; i < asset.raw.length; i++) {
-                            bytes[i] = asset.raw.charCodeAt(i);
-                        }
-                        const blob = new Blob([bytes], {type: asset.mime});
-                        return new Response(blob);
-                    }
-                    console.warn("[Pytron VAP] Asset not found in bridge:", key);
-                    return new Response('Not Found', {status: 404});
-                }
-                return originalFetch(input, init);
-            };
-
-            // Global handler for pytron:// URLs in tags (Images, Scripts, Styles)
-            async function handlePytronAsset(el) {
-                if (!el || !el.tagName) return;
-                const isLink = el.tagName === 'LINK';
-                const isScript = el.tagName === 'SCRIPT';
-                const attr = isLink ? 'href' : 'src';
-                
-                const rawUrl = el.getAttribute(attr);
-                const key = getPytronKey(rawUrl) || getPytronKey(el[attr]);
-
-                if (key && !el.__pytron_loading) {
-                    el.__pytron_loading = true;
-                    try {
-                        console.log("[Pytron VAP] Reconciling asset key:", key, "for", el.tagName);
-                        const asset = await window.__pytron_vap_get(key);
-                        if (asset) {
-                            const bytes = new Uint8Array(asset.raw.length);
-                            for (let i = 0; i < asset.raw.length; i++) {
-                                bytes[i] = asset.raw.charCodeAt(i);
-                            }
-                            const blob = new Blob([bytes], {type: asset.mime});
-                            const blobUrl = URL.createObjectURL(blob);
-                            
-                            if (isScript) {
-                                const newScript = document.createElement('script');
-                                Array.from(el.attributes).forEach(a => {
-                                    if (a.name !== 'src') newScript.setAttribute(a.name, a.value);
-                                });
-                                newScript.src = blobUrl;
-                                newScript.__pytron_loading = true;
-                                el.parentNode.replaceChild(newScript, el);
-                            } else {
-                                if (el.__pytron_blob_url) URL.revokeObjectURL(el.__pytron_blob_url);
-                                el.__pytron_blob_url = blobUrl;
-                                el[attr] = blobUrl;
-                            }
-                        }
-                    } catch (e) {
-                        console.error("[Pytron VAP] Asset load failed:", e);
-                    } finally {
-                        el.__pytron_loading = false;
-                    }
-                }
-            }
-
-            // Observe the DOM for new assets or src/href changes
-            const observer = new MutationObserver((mutations) => {
-                for (const mutation of mutations) {
-                    if (mutation.type === 'childList') {
-                        mutation.addedNodes.forEach(node => {
-                            if (['IMG', 'SCRIPT', 'LINK'].includes(node.tagName)) handlePytronAsset(node);
-                            else if (node.querySelectorAll) {
-                                node.querySelectorAll('img, script, link').forEach(handlePytronAsset);
-                            }
-                        });
-                    } else if (mutation.type === 'attributes') {
-                        if (['IMG', 'SCRIPT', 'LINK'].includes(mutation.target.tagName)) {
-                            handlePytronAsset(mutation.target);
-                        }
-                    }
-                }
-            });
-
-            const startObserver = () => {
-                const target = document.documentElement || document.body;
-                if (target) {
-                    observer.observe(target, { 
-                        childList: true, 
-                        subtree: true, 
-                        attributes: true, 
-                        attributeFilter: ['src', 'href'] 
-                    });
-                } else {
-                    setTimeout(startObserver, 5);
-                }
-            };
-            startObserver();
-
-            // Initial scan
-            const scan = () => document.querySelectorAll('img, script, link').forEach(handlePytronAsset);
-            if (document.readyState === 'loading') {
-                window.addEventListener('DOMContentLoaded', scan);
-            } else {
-                scan();
-            }
-        })();
-        """
-
-        init_js += f"""
-        console.log("[Pytron] Core Initialized");
-        window.pytron = window.pytron || {{}};
-        window.pytron.is_ready = true;
-        window.pytron.id = "{self.id}";
+        # Inject Minimal Core
+        # Note: Heavy logic (Fetch Interceptor, VAP, Error Reporting)
+        # has been moved to 'pytron-client' to minimize eval overhead.
+        init_js = f"""
+        (function() {{
+            window.pytron = window.pytron || {{}};
+            window.pytron.is_ready = true;
+            window.pytron.id = "{self.id}";
+        }})();
         """
 
         # Disable default context menu if requested in config, but allow it in debug mode
@@ -374,11 +338,8 @@ class Webview:
                 "\nwindow.addEventListener('contextmenu', e => e.preventDefault());"
             )
 
-        # Prevent default file drop behavior (stops opening files in browser)
-        # Drag & Drop is now handled exclusively by pytron-client.
-        # No injected JS listeners here to avoid conflicts.
-
         # Development Shortcuts
+        # (Optional: these could also be in pytron-client, but they are tiny)
         if config.get("debug", False):
             init_js += """
             window.addEventListener('keydown', e => {
@@ -395,47 +356,12 @@ class Webview:
             });
             """
 
-        # Error Reporting
+        # Error Reporting Binding (Listener logic moved to pytron-client)
         self.bind("__pytron_report_error", self._report_error, run_in_thread=False)
-        init_js += """
-        window.addEventListener('error', function(e) {
-            window.__pytron_report_error({
-                message: e.message,
-                source: e.filename,
-                lineno: e.lineno,
-                colno: e.colno,
-                stack: e.error ? e.error.stack : ''
-            });
-        });
-        window.addEventListener('unhandledrejection', function(e) {
-            window.__pytron_report_error({
-                message: 'Unhandled Promise Rejection: ' + e.reason,
-                source: 'promise',
-                stack: e.reason ? e.reason.stack : ''
-            });
-        });
-        """
 
         lib.webview_init(self.w, init_js.encode("utf-8"))
 
         # self._served_data = {} # Removed: initialized earlier
-
-        # Resolve App Root for reliable relative pathing
-        if getattr(sys, "frozen", False):
-            self._app_root = pathlib.Path(sys.executable).parent
-            if hasattr(sys, "_MEIPASS"):
-                self._app_root = pathlib.Path(sys._MEIPASS)
-        else:
-            main_script = (
-                sys.modules["__main__"].__file__
-                if "__main__" in sys.modules
-                and hasattr(sys.modules["__main__"], "__file__")
-                else None
-            )
-            if main_script:
-                self._app_root = pathlib.Path(main_script).parent
-            else:
-                self._app_root = pathlib.Path.cwd()
 
         self.normalize_path(config)
 
@@ -453,6 +379,22 @@ class Webview:
         self.set_title(config.get("title", "Pytron App"))
         width, height = config.get("dimensions", [800, 600])
         self.set_size(width, height)
+
+        # Min/Max/Fixed Size Support (Native Hinting)
+        min_sz = config.get("min_size")
+        if min_sz and isinstance(min_sz, list) and len(min_sz) == 2:
+            # WEBVIEW_HINT_MIN = 1
+            lib.webview_set_size(self.w, int(min_sz[0]), int(min_sz[1]), 1)
+
+        max_sz = config.get("max_size")
+        if max_sz and isinstance(max_sz, list) and len(max_sz) == 2:
+            # WEBVIEW_HINT_MAX = 2
+            lib.webview_set_size(self.w, int(max_sz[0]), int(max_sz[1]), 2)
+
+        if config.get("resizable", True) is False:
+            # WEBVIEW_HINT_FIXED = 3
+            lib.webview_set_size(self.w, width, height, 3)
+
         if "icon" in config:
             self.set_icon(config["icon"])
 
@@ -845,6 +787,17 @@ class Webview:
                         self.bind(name, attr)
             return entity
 
+    def dispatch(self, event: str, payload: dict = None):
+        """
+        Dispatches a named event to the frontend Event Bus.
+        Usage: window.dispatch('navigate', {'route': '/settings'})
+        """
+        import json
+
+        payload_js = json.dumps(payload or {})
+        script = f"if(window.pytron && window.pytron.events) window.pytron.events.emit('{event}', {payload_js});"
+        self.eval(script)
+
     def normalize_path(self, config):
         if IS_ANDROID:
             if not config.get("url"):
@@ -885,14 +838,11 @@ class Webview:
                 path_obj = path_obj.resolve()
 
         if not path_obj.exists():
-            self.logger.error(f"HTML file not found at: {path_obj}")
-            raise ResourceNotFoundError(
-                f"Pytron Error: HTML file not found at: {path_obj}"
+            # As a last resort, check if it's served by a dev server (but here we just check file existence)
+            # If not found, log warning but don't crash, maybe user meant a remote URL without protocol
+            self.logger.warning(
+                f"Could not find local file: {path_obj}. Assuming it might be a remote URL or served content."
             )
-
-        # Standard file path for engine-level navigation (Fixes blank page)
-        # We still provide the high-performance VAP bridge via current JS hooks.
-        uri = path_obj.as_uri()
-        config["url"] = uri
-        self._vap_app_dir = path_obj.parent
-        self.logger.debug(f"Normalized URL: {uri}")
+        else:
+            # Convert to file:// URL
+            config["url"] = path_obj.as_uri()

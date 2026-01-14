@@ -60,6 +60,23 @@ class App(ConfigMixin, WindowMixin, ExtrasMixin, CodegenMixin, NativeMixin, Shel
         self._resolve_resources()
         self._register_core_apis()
 
+        # Engine Selection (PRO FEATURES)
+        self.engine = os.environ.get(
+            "PYTRON_ENGINE", self.config.get("engine", "native")
+        )
+
+        # Override via CLI flags if present
+        if "--web" in sys.argv:
+            self.engine = "chrome"
+
+        # Check if --engine X was passed directly to the script
+        for i, arg in enumerate(sys.argv):
+            if arg == "--engine" and i + 1 < len(sys.argv):
+                self.engine = sys.argv[i + 1]
+
+        if self.engine == "chrome":
+            self.logger.info("Using Chrome Shell Engine (Mojo IPC)")
+
         # Initialize Inspector
         self.inspector = Inspector(self)
 
@@ -70,10 +87,16 @@ class App(ConfigMixin, WindowMixin, ExtrasMixin, CodegenMixin, NativeMixin, Shel
         self._setup_key_value_store()
 
         # Register automatic cleanup for thread pool
+        # Register automatic cleanup for thread pool
         @self.on_exit
         def _cleanup_pool():
-            self.logger.debug("Shutting down thread pool...")
-            self.thread_pool.shutdown(wait=False)
+            if self.thread_pool:
+                self.logger.debug("Shutting down thread pool...")
+                try:
+                    self.thread_pool.shutdown(wait=False, cancel_futures=True)
+                except Exception:
+                    pass
+                self.thread_pool = None
 
         # AUTO-CODEGEN: Generate TypeScript definitions in debug mode
         if self.config.get("debug", False):
@@ -294,6 +317,18 @@ class App(ConfigMixin, WindowMixin, ExtrasMixin, CodegenMixin, NativeMixin, Shel
         self.broadcast(event_name, data)
         return True
 
+    def dispatch(self, event_name: str, payload: Any = None):
+        """
+        Dispatches an event to the frontend Event Bus in ALL active windows.
+        Usage: app.dispatch('navigate', {'route': '/settings'})
+        """
+        # We iterate over windows and call their individual dispatch method
+        # This ensures they use the strictly defined event bus protocol we implemented in Webview
+        for window in self.windows:
+            if hasattr(window, "dispatch"):
+                window.dispatch(event_name, payload)
+        return True
+
     def toggle_inspector(self):
         """
         Toggles the Pytron Inspector window.
@@ -325,7 +360,22 @@ class App(ConfigMixin, WindowMixin, ExtrasMixin, CodegenMixin, NativeMixin, Shel
             if os.path.exists(os.path.join(potential, "package.json")):
                 frontend_dir = potential
 
-        for item in os.listdir(plugins_dir):
+        # Filter and order by 'plugins' config list if present
+        allowed_plugins = self.config.get("plugins", [])
+        scan_items = []
+
+        if (
+            allowed_plugins
+            and isinstance(allowed_plugins, list)
+            and len(allowed_plugins) > 0
+        ):
+            scan_items = allowed_plugins
+        else:
+            # Fallback to scanning directory
+            if os.path.exists(plugins_dir):
+                scan_items = sorted(os.listdir(plugins_dir))
+
+        for item in scan_items:
             plugin_path = os.path.join(plugins_dir, item)
             manifest_path = os.path.join(plugin_path, "manifest.json")
 
@@ -337,7 +387,9 @@ class App(ConfigMixin, WindowMixin, ExtrasMixin, CodegenMixin, NativeMixin, Shel
                     # Dependency Check & Install
                     # For NPM, we usually want to install if there are any listed to be safe,
                     # as check_dependencies currently only verifies Python modules.
-                    if not plugin.check_dependencies() or plugin.npm_dependencies:
+                    if not plugin.check_dependencies() or (
+                        plugin.npm_dependencies and not plugin.check_js_dependencies()
+                    ):
                         self.logger.info(
                             f"Checking/Installing dependencies for {plugin.name}..."
                         )

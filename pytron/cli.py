@@ -23,6 +23,7 @@ from .commands.plugin import cmd_plugin
 from .commands.frontend import cmd_frontend
 from .commands.login import cmd_login, cmd_logout
 from .commands.android import cmd_android
+from .commands.engine import cmd_engine
 from .commands.doctor import cmd_doctor
 from .commands.workflow import cmd_workflow
 from .console import log, set_log_file
@@ -145,6 +146,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_run.add_argument("--engine", help="Browser engine to use (native)")
     p_run.add_argument(
+        "--chrome", action="store_true", help="Shortcut for --engine chrome"
+    )
+    p_run.add_argument(
         "extra_args",
         nargs=argparse.REMAINDER,
         help="Extra args to forward to script",
@@ -185,6 +189,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Enable auto-inclusion of smart assets (non-code files).",
     )
     p_pkg.add_argument("--engine", help="Browser engine to use (native)")
+    p_pkg.add_argument(
+        "--chrome", action="store_true", help="Shortcut for --engine chrome"
+    )
     p_pkg.add_argument(
         "--no-shake",
         action="store_true",
@@ -269,17 +276,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_workflow = sub.add_parser(
         "workflow", help="CI/CD Workflow management", parents=[base_parser]
     )
-    workflow_sub = p_workflow.add_subparsers(dest="workflow_command")
+    p_workflow.set_defaults(func=cmd_workflow)
 
-    pw_init = workflow_sub.add_parser(
-        "init",
-        help="Initialize GitHub Actions for multi-platform packaging",
+    # Engine Management
+    p_eng = sub.add_parser(
+        "engine",
+        help="Manage browser engines (Mojo Chrome, etc.)",
         parents=[base_parser],
     )
-    pw_init.add_argument(
-        "--force", action="store_true", help="Overwrite existing workflow file"
-    )
-    pw_init.set_defaults(func=cmd_workflow)
+    eng_sub = p_eng.add_subparsers(dest="engine_command")
+
+    pe_inst = eng_sub.add_parser("install", help="Install/Forge a browser engine")
+    pe_inst.add_argument("name", choices=["chrome"], help="Name of the engine")
+
+    p_eng.set_defaults(func=cmd_engine)
 
     return parser
 

@@ -1,82 +1,144 @@
-class PlatformInterface:
-    def minimize(self, w):
+from abc import ABC, abstractmethod
+from typing import Optional, Dict, List, TypeAlias
+
+# Defines a "Handle" type for clarity -> Zero runtime cost, high readability.
+WindowHandle: TypeAlias = int
+
+
+class PlatformInterface(ABC):
+    """
+    PINNED STABILITY CONTRACT
+    -------------------------
+    This interface defines the immutable core contract for all platform implementations.
+    Core lifecycle and window operations are abstract and MUST be implemented.
+    Extended capabilities (Notifications, Taskbar, etc.) are virtual and optional.
+    """
+
+    # --- Core Window Operations (Pinned) ---
+
+    @abstractmethod
+    def show(self, w: WindowHandle) -> None:
         pass
 
-    def set_bounds(self, w, x, y, width, height):
+    @abstractmethod
+    def hide(self, w: WindowHandle) -> None:
         pass
 
-    def close(self, w):
+    @abstractmethod
+    def close(self, w: WindowHandle) -> None:
         pass
 
-    def toggle_maximize(self, w):
-        return False
-
-    def make_frameless(self, w):
+    @abstractmethod
+    def minimize(self, w: WindowHandle) -> None:
         pass
 
-    def start_drag(self, w):
+    @abstractmethod
+    def toggle_maximize(self, w: WindowHandle) -> bool:
+        """Returns True if maximized, False if restored."""
         pass
 
-    def message_box(self, w, title, message, style=0):
-        return 6  # Default Yes
-
-    # New Cross-platform Daemon/Notification Capabilities
-    def notification(self, w, title, message, icon=None):
+    @abstractmethod
+    def set_bounds(
+        self, w: WindowHandle, x: int, y: int, width: int, height: int
+    ) -> None:
         pass
 
-    def hide(self, w):
+    @abstractmethod
+    def is_visible(self, w: WindowHandle) -> bool:
         pass
 
-    def is_visible(self, w):
-        return True  # Default assumption for platforms that don't impl check
-
-    def is_alive(self, w):
-        """Checks if the native window handle is still valid."""
-        return True  # Default assume alive
-
-    def show(self, w):
+    @abstractmethod
+    def center(self, w: WindowHandle) -> None:
         pass
 
-    def set_window_icon(self, w, icon_path):
+    # --- Essential extensions (Should interpret 'w') ---
+
+    def is_alive(self, w: WindowHandle) -> bool:
+        """Checks if the native window handle is still valid. Default True to prevent crashes."""
+        return True
+
+    def make_frameless(self, w: WindowHandle) -> None:
         pass
 
-    def set_app_id(self, app_id):
+    def start_drag(self, w: WindowHandle) -> None:
         pass
 
-    # Dialogs
-    def open_file_dialog(self, w, title, default_path=None, file_types=None):
+    def set_window_icon(self, w: WindowHandle, icon_path: str) -> None:
+        pass
+
+    def set_menu(self, w: WindowHandle, menu_bar: List) -> None:
+        pass
+
+    # --- System Dialogs & Interactions (Stable Extensions) ---
+
+    def message_box(
+        self, w: WindowHandle, title: str, message: str, style: int = 0
+    ) -> int:
+        return 0  # Default OK/Cancel result
+
+    def open_file_dialog(
+        self,
+        w: WindowHandle,
+        title: str,
+        default_path: Optional[str] = None,
+        file_types: Optional[str] = None,
+    ) -> Optional[str]:
         return None
 
     def save_file_dialog(
-        self, w, title, default_path=None, default_name=None, file_types=None
-    ):
+        self,
+        w: WindowHandle,
+        title: str,
+        default_path: Optional[str] = None,
+        default_name: Optional[str] = None,
+        file_types: Optional[str] = None,
+    ) -> Optional[str]:
         return None
 
-    def open_folder_dialog(self, w, title, default_path=None):
+    def open_folder_dialog(
+        self, w: WindowHandle, title: str, default_path: Optional[str] = None
+    ) -> Optional[str]:
         return None
 
-    def set_slim_titlebar(self, w, enabled):
+    def notification(
+        self, w: WindowHandle, title: str, message: str, icon: Optional[str] = None
+    ) -> None:
         pass
 
-    def set_launch_on_boot(self, app_name, exe_path, enable=True):
+    def set_taskbar_progress(
+        self, w: WindowHandle, state: str, value: int, max_value: int
+    ) -> None:
+        """
+        Sets the taskbar/dock progress bar state.
+        state: 'normal', 'error', 'paused', 'indeterminate', 'none'
+        """
         pass
 
-    def register_protocol(self, scheme):
+    # --- System Integration (OS Hooks) ---
+
+    def register_protocol(self, scheme: str) -> bool:
         return False
 
-    def center(self, w):
+    def set_launch_on_boot(
+        self, app_name: str, exe_path: str, enable: bool = True
+    ) -> bool:
+        return False
+
+    def set_app_id(self, app_id: str) -> None:
         pass
 
-    # Clipboard
-    def set_clipboard_text(self, text):
-        pass
-
-    def get_clipboard_text(self):
-        return None
-
-    # System Info
-    def get_system_info(self):
+    def get_system_info(self) -> Dict:
         return {}
 
-    def set_menu(self, w, menu_bar):
+    # --- Clipboard ---
+
+    def set_clipboard_text(self, text: str) -> bool:
+        return False
+
+    def get_clipboard_text(self) -> Optional[str]:
+        return None
+
+    # --- UI Polish ---
+
+    def set_slim_titlebar(self, w: WindowHandle, enabled: bool) -> None:
         pass

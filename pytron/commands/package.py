@@ -302,11 +302,30 @@ def cmd_package(args: argparse.Namespace) -> int:
 
     script_dir = script.parent
 
-    # 1. settings.json
+    # 1. settings.json (Sanitized for Production)
     settings_path = script_dir / "settings.json"
     if settings_path.exists():
-        add_data.append(f"{settings_path}{os.pathsep}.")
-        log("Auto-including settings.json", style="dim")
+        try:
+            # Ensure build directory exists
+            build_dir = script_dir / "build"
+            build_dir.mkdir(parents=True, exist_ok=True)
+
+            # Force debug=False for production
+            if settings.get("debug") is True:
+                log("Auto-disabling 'debug' mode for production build.", style="dim")
+                settings["debug"] = False
+
+            # Write sanitized settings to temp location
+            temp_settings_path = build_dir / "settings.json"
+            temp_settings_path.write_text(json.dumps(settings, indent=4))
+
+            # Include the sanitized file, placing it at root (.)
+            add_data.append(f"{temp_settings_path}{os.pathsep}.")
+            log("Auto-including settings.json (optimized)", style="dim")
+        except Exception as e:
+            # Fallback to original if something fails
+            log(f"Warning optimizing settings.json: {e}", style="warning")
+            add_data.append(f"{settings_path}{os.pathsep}.")
 
     # 2. Frontend assets
     frontend_dist = None

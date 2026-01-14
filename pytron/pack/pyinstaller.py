@@ -9,6 +9,11 @@ from ..commands.harvest import generate_nuclear_hooks
 from .installers import build_installer
 from .utils import cleanup_dist
 
+try:
+    from PyInstaller.utils.win32.icon import CopyIcons
+except ImportError:
+    CopyIcons = None
+
 
 def run_pyinstaller_build(
     args,
@@ -54,15 +59,54 @@ def run_pyinstaller_build(
         dll_dest = os.path.join("pytron", "dependancies")
 
         requested_engine = getattr(args, "engine", None)
-        is_native = (
-            requested_engine != "webview2" and requested_engine != None
-        ) == False  # i.e. default or webview2
+        if getattr(args, "chrome", False):
+            requested_engine = "chrome"
 
         # Default to native if nothing specified
         if not requested_engine:
             requested_engine = "webview2"
 
         browser_data = []
+
+        # If using Chrome Mojo Engine, we MUST bundle the binaries
+        if requested_engine == "chrome":
+            global_engine_path = os.path.expanduser("~/.pytron/engines/chrome")
+            if os.path.exists(global_engine_path):
+                log(
+                    f"Auto-bundling Chrome Mojo Engine from: {global_engine_path}",
+                    style="info",
+                )
+                # We package it into dependancies/chrome inside the app
+                browser_data.append(
+                    f"{global_engine_path}{os.pathsep}{os.path.join('pytron', 'dependancies', 'chrome')}"
+                )
+
+                # FIX: Also bundle the Shell Source (shell.js, package.json)
+                # The adapter looks for 'shell' adjacent to itself in pytron/engines/chrome
+                shell_src = os.path.join(
+                    package_dir, "pytron", "engines", "chrome", "shell"
+                )
+                if os.path.exists(shell_src):
+                    shell_dest = os.path.join("pytron", "engines", "chrome", "shell")
+                    browser_data.append(f"{shell_src}{os.pathsep}{shell_dest}")
+                    log(
+                        f"Auto-bundling Chrome Shell Source from: {shell_src}",
+                        style="dim",
+                    )
+                else:
+                    log(
+                        f"Warning: Chrome Shell source not found at {shell_src}",
+                        style="warning",
+                    )
+            else:
+                log(
+                    "Warning: Chrome engine binaries not found locally. Bundle might fail to start.",
+                    style="error",
+                )
+                log(
+                    "Run 'pytron engine install chrome' before packaging.",
+                    style="error",
+                )
 
         makespec_cmd = [
             get_python_executable(),
@@ -83,7 +127,8 @@ def run_pyinstaller_build(
 
         # Force OS-specific libs if needed, but PyInstaller usually handles it via hooks
 
-        if requested_engine == "webview2" and not is_native:
+        if requested_engine == "webview2" and not getattr(args, "chrome", False):
+            # Note: Checking getattr arg again because native var isn't defined here cleanly
             # Legacy fallback for webview2 bundled
             browser_src = os.path.join(package_dir, "pytron", "dependancies", "browser")
             if os.path.exists(browser_src):
@@ -182,6 +227,36 @@ def run_pyinstaller_build(
                 makespec_cmd.append(f"--collect-all={pkg}")
                 log(f"Forcing full collection of package: {pkg}", style="dim")
 
+        # Handle include_patterns (globs)
+        include_patterns = settings.get("include_patterns", [])
+        if include_patterns:
+            log(f"Processing include_patterns: {include_patterns}", style="dim")
+            for pattern in include_patterns:
+                # Use Path.glob to find matches
+                try:
+                    # Recursive glob if pattern contains **
+                    for matched_path in script.parent.glob(pattern):
+                        # Skip if it's the dist/build dir to avoid loops
+                        if (
+                            "dist" in matched_path.parts
+                            or "build" in matched_path.parts
+                        ):
+                            continue
+
+                        target_rel = matched_path.relative_to(script.parent)
+
+                        if matched_path.is_file():
+                            # Valid file
+                            dest = target_rel.parent
+                            item = f"{matched_path}{os.pathsep}{dest}"
+                            makespec_cmd.extend(["--add-data", item])
+                        elif matched_path.is_dir():
+                            # Valid directory
+                            item = f"{matched_path}{os.pathsep}{target_rel}"
+                            makespec_cmd.extend(["--add-data", item])
+                except Exception as e:
+                    log(f"Error processing pattern '{pattern}': {e}", style="warning")
+
         log(f"Running makespec: {' '.join(makespec_cmd)}", style="dim")
         # subprocess.run(makespec_cmd, check=True) # Old way
         makespec_ret = run_command_with_output(makespec_cmd, style="dim")
@@ -262,6 +337,118 @@ def run_pyinstaller_build(
         log(f"Error generating spec or building: {e}", style="error")
         progress.stop()
         return 1
+
+    # --------------------------------------------------
+    # POST-BUILD: Chrome Engine Icon Patching (Windows Only)
+    # --------------------------------------------------
+    if sys.platform == "win32" and requested_engine == "chrome":
+        dist_root = Path("dist") / out_name
+        base_electron = dist_root / "pytron" / "engines" / "chrome" / "electron.exe"
+
+        # RENAME STEP: Create a unique engine binary for process grouping
+        target_name = f"{out_name}-Engine.exe"
+        renamed_electron = dist_root / "pytron" / "engines" / "chrome" / target_name
+
+        if base_electron.exists():
+            log(f"Renaming engine to unique binary: {target_name}", style="dim")
+            try:
+                # Use move to rename
+                # If target exists (re-run), delete it first
+                if renamed_electron.exists():
+                    os.remove(renamed_electron)
+                os.rename(base_electron, renamed_electron)
+
+                # Update variable for patching
+                dist_electron = renamed_electron
+            except Exception as e:
+                log(f"Failed to rename engine binary: {e}", style="warning")
+                dist_electron = base_electron  # Fallback
+        else:
+            # It might have already been renamed in a previous run?
+            if renamed_electron.exists():
+                dist_electron = renamed_electron
+            else:
+                dist_electron = base_electron
+
+        if dist_electron.exists() and app_icon:
+            log("Attempting to patch Electron icon...", style="dim")
+
+            # Method 1: PyInstaller Internal Utils (Preferred, No Dep)
+            patched_icon = False
+            if CopyIcons:
+                try:
+                    # CopyIcons(dst, src)
+                    # Note: PyInstaller signature varies. Try standard first.
+                    try:
+                        CopyIcons(str(dist_electron), str(app_icon))
+                    except TypeError:
+                        # Newer PyInstallers might need workpath?
+                        CopyIcons(str(dist_electron), str(app_icon), ".")
+
+                    patched_icon = True
+                    log(
+                        f"Successfully patched Electron icon (Native): {dist_electron}",
+                        style="success",
+                    )
+                except Exception as e:
+                    log(f"Native icon patch failed: {e}", style="warning")
+
+            # Method 2: Rcedit (For Metadata + Icon Fallback)
+            import shutil
+
+            rcedit = shutil.which("rcedit")
+
+            if rcedit:
+                try:
+                    if not patched_icon:
+                        cmd_icon = [rcedit, str(dist_electron), "--set-icon", app_icon]
+                        run_command_with_output(cmd_icon, style="dim")
+
+                    # Patch Metadata (if available)
+                    if "version" in settings:
+                        cmd_ver = [
+                            rcedit,
+                            str(dist_electron),
+                            "--set-file-version",
+                            settings["version"],
+                            "--set-product-version",
+                            settings["version"],
+                        ]
+                        run_command_with_output(cmd_ver, style="dim")
+
+                    # Patch Names
+                    author = settings.get("author", "Pytron App")
+                    copyright = settings.get("copyright", "")
+                    cmd_meta = [
+                        rcedit,
+                        str(dist_electron),
+                        "--set-version-string",
+                        "FileDescription",
+                        out_name,
+                        "--set-version-string",
+                        "ProductName",
+                        out_name,
+                        "--set-version-string",
+                        "CompanyName",
+                        author,
+                        "--set-version-string",
+                        "LegalCopyright",
+                        copyright,
+                    ]
+                    run_command_with_output(cmd_meta, style="dim")
+                    log(
+                        "Successfully patched Electron metadata (rcedit)",
+                        style="success",
+                    )
+
+                except Exception as e:
+                    log(f"Rcedit patching failed: {e}", style="warning")
+            else:
+                if not patched_icon and not CopyIcons:
+                    log(
+                        "Warning: Could not patch Electron icon (Missing PyInstaller utils and rcedit).",
+                        style="warning",
+                    )
 
     if args.installer:
         progress.update(task, description="Building Installer...", completed=90)

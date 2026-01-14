@@ -6,27 +6,17 @@ from .windows_ops import window, system, webview
 
 class WindowsImplementation(PlatformInterface):
     def __init__(self):
-        user32 = ctypes.windll.user32
-        # Prevent 64-bit Overflow
-        user32.SendMessageW.argtypes = [
-            ctypes.wintypes.HWND,
-            ctypes.wintypes.UINT,
-            ctypes.wintypes.WPARAM,
-            ctypes.wintypes.LPARAM,
-        ]
-        user32.PostMessageW.argtypes = [
-            ctypes.wintypes.HWND,
-            ctypes.wintypes.UINT,
-            ctypes.wintypes.WPARAM,
-            ctypes.wintypes.LPARAM,
-        ]
-        user32.ShowWindow.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
-
-        # Enable High-DPI
+        # Harden High-DPI loading
         try:
-            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+            shcore = ctypes.windll.shcore
+            shcore.SetProcessDpiAwareness.argtypes = [ctypes.c_int]
+            shcore.SetProcessDpiAwareness.restype = ctypes.c_long
+            shcore.SetProcessDpiAwareness(1)
         except Exception:
             try:
+                user32 = ctypes.windll.user32
+                user32.SetProcessDPIAware.argtypes = []
+                user32.SetProcessDPIAware.restype = ctypes.wintypes.BOOL
                 user32.SetProcessDPIAware()
             except Exception:
                 pass
@@ -66,7 +56,14 @@ class WindowsImplementation(PlatformInterface):
 
     def is_alive(self, w):
         hwnd = self.get_hwnd(w)
-        return bool(hwnd and ctypes.windll.user32.IsWindow(hwnd))
+        # Harden IsWindow check
+        if not hwnd:
+            return False
+        # IsWindow takes HWND, returns BOOL (int)
+        user32 = ctypes.windll.user32
+        user32.IsWindow.argtypes = [ctypes.wintypes.HWND]
+        user32.IsWindow.restype = ctypes.wintypes.BOOL
+        return bool(user32.IsWindow(hwnd))
 
     def show(self, w):
         window.show(w)
@@ -92,7 +89,11 @@ class WindowsImplementation(PlatformInterface):
         return webview.register_pytron_scheme(w, callback)
 
     def set_taskbar_progress(self, w, state="normal", value=0, max_value=100):
-        system.set_taskbar_progress(w, state, value, max_value)
+        try:
+            system.set_taskbar_progress(w, state, value, max_value)
+        except Exception:
+            # Taskbar progress is non-critical, fail silently if COM/HWND issues occur
+            pass
 
     def set_app_id(self, app_id):
         system.set_app_id(app_id)

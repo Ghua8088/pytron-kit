@@ -1,0 +1,112 @@
+import sys
+import os
+import time
+import logging
+import pathlib
+
+# Ensure pytron is in path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
+from pytron.application import App
+
+# 1. SETUP LOGGING
+logging.basicConfig(level=logging.DEBUG)
+
+
+def main():
+    # Force the --web engine
+    if "--web" not in sys.argv:
+        sys.argv.append("--web")
+
+    app = App()
+
+    # 2. DEFINE NATIVE FUNCTIONS (The Mojo IPC Bridge)
+    @app.expose
+    def greet_python(name):
+        print(f"\n[MOJO RECV] Hello from JS to {name}!")
+        return f"Mojo Handshake Successful, {name}!"
+
+    # 3. CREATE WINDOW
+    # Use absolute path for the test HTML
+    test_dir = pathlib.Path(__file__).parent.resolve()
+    html_path = test_dir / "mojo_test.html"
+
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Mojo IPC Test</title>
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #121212; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+            .card { background: #1e1e1e; padding: 2rem; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); text-align: center; border: 1px solid #333; }
+            button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 16px; transition: 0.2s; }
+            button:hover { background: #0056b3; transform: scale(1.05); }
+            #status { margin-top: 1rem; color: #aaa; font-size: 14px; }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h1>Mojo IPC Bridge</h1>
+            <button onclick="testMojo()">Trigger Mojo IPC</button>
+            <div id="status">Waiting for interaction...</div>
+        </div>
+
+        <script>
+            // Shim to mimic pytron-client Proxy for this raw test
+            if (!window.pytron || !window.pytron.emit) {
+                console.log("Injecting Pytron Mock Shim...");
+                window.pytron = new Proxy({}, {
+                    get: (target, prop) => {
+                        return (...args) => {
+                            const internalName = "pytron_" + prop;
+                            const directName = prop;
+                            
+                            // In our Mojo shell, we dynamically define these
+                            if (typeof window[internalName] === 'function') return window[internalName](...args);
+                            if (typeof window[directName] === 'function') return window[directName](...args);
+                            
+                            console.error("Method " + prop + " not found locally. Ensure app.expose() was called.");
+                            return Promise.reject("Method not found");
+                        }
+                    }
+                });
+            }
+
+            async function testMojo() {
+                const status = document.getElementById('status');
+                status.innerText = "Invoking greet_python via Proxy...";
+                try {
+                    // This calls window.greet_python (bound via Mojo)
+                    const result = await window.pytron.greet_python('Mojo-Explorer');
+                    status.innerText = "Response: " + result;
+                } catch (e) {
+                    status.innerText = "Error: " + e.message;
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
+
+    with open(html_path, "w") as f:
+        f.write(html_content)
+
+    print(f"Loading test HTML from: {html_path}")
+
+    try:
+        app.create_window(url=str(html_path), title="Pytron Professional - Mojo Engine")
+
+        # 4. RUN
+        app.run()
+    finally:
+        # Cleanup artifact
+        if os.path.exists(html_path):
+            try:
+                os.remove(html_path)
+                print(f"Cleaned up: {html_path}")
+            except Exception:
+                pass
+
+
+if __name__ == "__main__":
+    main()

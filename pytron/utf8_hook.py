@@ -43,8 +43,25 @@ def _set_utf8_mode():
             import ctypes
 
             kernel32 = ctypes.windll.kernel32
-            kernel32.SetConsoleOutputCP(65001)
-            kernel32.SetConsoleCP(65001)
+
+            # Harden: Explicitly define signatures for robustness
+            kernel32.SetConsoleOutputCP.argtypes = [ctypes.c_uint]
+            kernel32.SetConsoleOutputCP.restype = ctypes.c_int
+
+            kernel32.SetConsoleCP.argtypes = [ctypes.c_uint]
+            kernel32.SetConsoleCP.restype = ctypes.c_int
+
+            # Check return values (Non-zero is success)
+            if kernel32.SetConsoleOutputCP(65001) == 0:
+                err = ctypes.get_last_error()
+                # We don't want to crash on this, but we acknowledge the failure
+                # logging.warning(f"Failed to SetConsoleOutputCP: {err}")
+                pass
+
+            if kernel32.SetConsoleCP(65001) == 0:
+                err = ctypes.get_last_error()
+                pass
+
         except Exception:
             pass
 

@@ -63,7 +63,7 @@ graph TD
 - **High-Performance VAP Bridge**: Zero-copy binary IPC using the `pytron://` protocol for streaming large data (frames, tensors) without Base64 overhead.
 - **Serializer Enhancements**: `PytronJSONEncoder` gained broader support (Pydantic models, PIL images -> data URIs, dataclasses, enums, timedeltas, complex numbers, __slots__, and iterable fallbacks) for safer frontend bridging.
 - **Platform Interface Expanded**: Platform backends now provide richer capabilities (notifications, dialogs, icon/app-id management, tray/daemon helpers).
-
+- **Chrome/Electron Engine**: A production-grade alternative to the default webview. Uses Electron (Mojo Engine) for enhanced stability, modern DevTools, and pixel-perfect rendering, while maintaining full support for Pytron's native features (taskbar, menus, frameless).
 
 ## Prerequisites
 
@@ -173,7 +173,7 @@ def toggle_visibility():
     else:
         app.show()
 
-# Register shortcut (Ctrl+Shift+Space)
+# Register shortcut (Ctrl+Shift+SPACE)
 app.shortcut("Ctrl+Shift+SPACE", toggle_visibility)
 app.shortcut("Alt+K", lambda: print("Shortcut triggered!"))
 ```
@@ -237,81 +237,32 @@ def export_data():
     return False
 ```
 
-### 6. Reactive State
-Sync data automatically.
+## Chrome Engine (Electron)
 
-**Python:**
-```python
-app.state.counter = 0
-```
+For applications requiring maximum stability, modern web standards, or advanced video playback, Pytron offers a **Chrome Engine** (powered by Electron) as a drop-in replacement for the standard OS webview.
 
-**JavaScript:**
-```javascript
-console.log(pytron.state.counter); // 0
+**Why use it?**
+- **Consistency**: Same rendering engine (Blink) on all platforms.
+- **Tools**: Full Chrome DevTools experience.
+- **Stability**: Avoids OS-specific webview quirks (especially on older Windows versions).
+- **Native Support**: Fully integrates with Pytron's native window controls (frameless, taskbar progress, minimization) via a robust IPC bridge.
 
-// Listen for changes
-pytron.on('pytron:state-update', (change) => {
-    console.log(change.key, change.value);
-});
-```
+**Usage:**
 
-### 4. Window Management
-Control the window directly from JS.
-
-```javascript
-pytron.minimize();
-pytron.toggle_fullscreen();
-pytron.close();
-```
-
-### 5. Development Workflow (`--dev`)
-The development mode in Pytron is designed for modern web development workflows.
+Run locally with Chrome engine:
 ```bash
-pytron run --dev
-```
-*   **Dual Hot Reloading**:
-    *   **Frontend**: Pytron detects your `npm run dev` script (Vite/Next/WebPack) and proxies the window to your local dev server (e.g., `localhost:5173`). This gives you **Hot Module Replacement (HMR)**—UI changes update instantly without a reload.
-    *   **Backend**: Pytron watches your Python files. If you change backend logic, the Python application performs a **Hot Restart** automatically.
-*   **Debug Logging**: If `debug: true` is set in `settings.json`, Pytron switches to verbose logging, showing bridge messages and binding invocations.
-*   **Non-Blocking UI**: Pytron automatically runs synchronous Python functions in a background thread pool, ensuring that heavy Python tasks never freeze the UI.
-
-### 7. Deep Linking Router
-Handle custom URI schemes (e.g., `pytron://my-action`) using the built-in router.
-This supports both **Cold Starts** (launching via link) and **Warm Starts** (app already running).
-
-**Register Routes:**
-```python
-# 1. Simple Action (pytron://settings)
-@app.on_deep_link("settings")
-def open_settings():
-    print("Opening settings...")
-
-# 2. Path Parameters (pytron://project/123)
-@app.on_deep_link("project/{id}")
-def open_project(id):
-    print(f"Opening Project ID: {id}")
-
-# 3. Query Params & Full Link Object (pytron://oauth/callback?token=abc)
-@app.on_deep_link("oauth/callback")
-def handle_oauth(token, link):
-    print(f"Token: {token}")
-    print(f"Raw URL: {link.raw_url}")
-
-# Register a custom protocol on the OS (run once)
-if __name__ == "__main__":
-    app.register_protocol("my-app")
-    app.run()
+pytron run --chrome
 ```
 
-### 8. Start on Boot
-Easily allow your app to launch when the system starts.
+**Packaging with Chrome:**
+To bundle the Chrome engine with your application (increases size by ~80MB but guarantees environment):
+```bash
+pytron package --chrome
+```
 
-```python
-# Enable launching at startup
-app.set_start_on_boot(True)
-
-# Disable
-app.set_start_on_boot(False)
+To install the engine binaries globally for development:
+```bash
+pytron engine install chrome
 ```
 
 ## Configuration (settings.json)
@@ -410,6 +361,18 @@ PyInstaller doesn't support true cross-compilation. To build for other platforms
 *   `pytron info`: Show information about the current environment.
 *   `pytron android <action>`: Experimental tools for Android (init, sync, build, run).
 *   `pytron workflow init`: Generate GitHub Actions for multi-platform packaging (Windows/Linux/macOS).
+
+## Architecture & Technology Decisions
+
+Pytron uses a curated stack of robust open-source technologies to power its features. We explicitly acknowledge and explain our architectural choices below:
+
+-   **Chrome Engine (Mojo)**: We integrate **[Electron](https://www.electronjs.org/)** as our high-performance rendering engine. We use a "headless" approach where Electron handles the view layer (Chromium), while all business logic remains in your Python process. This provides modern CSS support and DevTools without the complexity of a full Node.js backend.
+-   **Native Engine**: For lightweight, zero-dependency apps, we use a custom implementation **inspired by [pywebview](https://github.com/r0x0r/pywebview)**. We rebuilt the core loop to support our VAP (Virtual Asset Provider) and deeper platform-specific integration (Win32/Cocoa/GTK) and a more NPM based frontend where python avoids direct injection of JS code and avoids direct interaction with the DOM.
+-   **Security Layer**: The "Agentic Shield" secure bootloader is written in **[Rust](https://www.rust-lang.org/)**. We chose Rust for its memory safety and ability to securely handle AES-256-GCM decryption keys in memory, preventing typical Python bytecode extraction attacks.
+-   **Packaging**:
+    -   **[PyInstaller](https://pyinstaller.org/)**: The default choices for `pytron package` due to its excellent compatibility with complex scientific libraries (NumPy, Torch).
+    -   **[Nuitka](https://nuitka.net/)**: Available via `--nuitka`. We support this for developers needing compilation to machine code (C++) for performance-critical applications.
+-   **Frontend Tooling**: Our CLI scaffolds projects using **[Vite](https://vitejs.dev/)**. We customized the Vite config to proxy requests to our Python backend, enabling a seamless "Hot Module Replacement" experience for dual-stack development.
 
 **Happy Coding with Pytron!**
 

@@ -19,11 +19,25 @@ TEMPLATE_APP = """from pytron import App
 
 def main():
     app = App()
+    
+    # Expose Python function to Frontend
+    @app.expose
+    def greet(name):
+        return f"Hello, {name}! From Python 🐍"
+
     app.run()
 
 if __name__ == '__main__':
     main()
 """
+
+
+def get_frontend_runner(provider: str) -> str:
+    if provider == "bun":
+        return "bunx"
+    if provider == "pnpm":
+        return "pnpx"
+    return "npx"
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -53,19 +67,47 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     settings_file = target / "settings.json"
     settings_data = {
+        # Identity
         "title": target.name,
         "version": "1.0.0",
-        "pytron_version": __version__,
-        "frontend_framework": args.template,
-        "frontend_provider": provider,
-        "dimensions": [800, 600],
-        "frameless": False,
-        "default_context_menu": False,
-        "icon": "pytron.ico",
-        "url": dist_path,
         "author": "Your Name",
         "description": "A brief description of your app",
         "copyright": f"Copyright © 2026 Your Name",
+        "pytron_version": __version__,
+        # Window Configuration
+        "dimensions": [800, 600],
+        "min_size": None,
+        "max_size": None,
+        "resizable": True,
+        "frameless": False,
+        "fullscreen": False,
+        "always_on_top": False,
+        "transparent": False,
+        "background_color": "#ffffff",
+        "start_maximized": False,
+        "start_hidden": False,
+        "default_context_menu": False,
+        # Application
+        "url": dist_path,
+        "icon": "pytron.ico",
+        "engine": "native",  # Options: 'native', 'chrome'
+        "single_instance": True,
+        "close_to_tray": False,
+        "debug": False,
+        # Frontend
+        "frontend_framework": args.template,
+        "frontend_provider": provider,
+        "dev_port": None,
+        # Plugins
+        "plugins_dir": None,
+        "plugins": [],
+        # Packaging & Build
+        "splash_image": None,
+        "force-package": [],
+        "include_patterns": [],
+        "exclude_patterns": [],
+        "macos_plist": {},
+        "signing": {},
     }
     settings_file.write_text(json.dumps(settings_data, indent=4))
 
@@ -121,28 +163,25 @@ def cmd_init(args: argparse.Namespace) -> int:
 
             progress.update(task, description="Configuring Next.js...", completed=40)
             # Configure Next.js for static export
+            # Configure Next.js for static export
             next_config_path = target / "frontend" / "next.config.mjs"
             if not next_config_path.exists():
                 next_config_path = target / "frontend" / "next.config.js"
 
-            if next_config_path.exists():
-                content = next_config_path.read_text()
-                # Simple injection for static export
-                if "const nextConfig = {" in content:
-                    new_content = content.replace(
-                        "const nextConfig = {",
-                        "const nextConfig = {\n  output: 'export',\n  images: { unoptimized: true },",
-                    )
-                    next_config_path.write_text(new_content)
-                    log(
-                        "Configured Next.js for static export (output: 'export')",
-                        style="success",
-                    )
-                else:
-                    log(
-                        "Warning: Could not automatically configure next.config.mjs for static export. Please add output: 'export' manually.",
-                        style="warning",
-                    )
+            # Force overwrite with known good config for Pytron
+            next_conf_content = """/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: 'export',
+  images: { unoptimized: true },
+};
+
+export default nextConfig;
+"""
+            next_config_path.write_text(next_conf_content)
+            log(
+                "Configured Next.js for static export (forced overwrite)",
+                style="success",
+            )
 
             # Add browserslist to package.json for better compatibility
             package_json_path = target / "frontend" / "package.json"
@@ -174,11 +213,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         # We use a specific version (5.5.0) to avoid experimental prompts (like rolldown)
         # that appear in newer versions (v6+).
         try:
-            runner = "npx"
-            if provider == "bun":
-                runner = "bunx"
-            elif provider == "pnpm":
-                runner = "pnpx"
+            runner = get_frontend_runner(provider)
 
             ret = run_command_with_output(
                 [
@@ -248,53 +283,150 @@ def cmd_init(args: argparse.Namespace) -> int:
                 )
 
             # Configure Vite for relative paths (base: './') and legacy polyfills
+            # We FORCE overwrite the config to ensure stability, rather than patching.
             vite_config_path = target / "frontend" / "vite.config.js"
-            if not vite_config_path.exists():
+            if (target / "frontend" / "vite.config.ts").exists():
                 vite_config_path = target / "frontend" / "vite.config.ts"
 
-            if vite_config_path.exists():
-                content = vite_config_path.read_text()
+            # Detect framework plugin based on template arg to ensure we don't break HMR
+            framework_plugin_import = ""
+            framework_plugin_usage = ""
 
-                # Add legacy plugin import if missing
-                if "import legacy from '@vitejs/plugin-legacy'" not in content:
-                    content = "import legacy from '@vitejs/plugin-legacy'\n" + content
-
-                if "defineConfig({" in content:
-                    # Add base: './'
-                    if "base:" not in content:
-                        content = content.replace(
-                            "defineConfig({", "defineConfig({\n  base: './',"
-                        )
-
-                    # Add legacy plugin to plugins array
-                    if "plugins: [" in content:
-                        if "legacy(" not in content:
-                            content = content.replace(
-                                "plugins: [",
-                                "plugins: [\n    legacy({\n      targets: ['defaults', 'not IE 11'],\n    }),",
-                            )
-                    else:
-                        # Fallback for when plugins array is missing
-                        content = content.replace(
-                            "defineConfig({",
-                            "defineConfig({\n  plugins: [\n    legacy({\n      targets: ['defaults', 'not IE 11'],\n    }),\n  ],",
-                        )
-
-                vite_config_path.write_text(content)
-                log(
-                    "Configured Vite for relative paths and legacy polyfills",
-                    style="success",
+            if "react" in args.template:
+                framework_plugin_import = "import react from '@vitejs/plugin-react'"
+                framework_plugin_usage = "react(),"
+            elif "vue" in args.template:
+                framework_plugin_import = "import vue from '@vitejs/plugin-vue'"
+                framework_plugin_usage = "vue(),"
+            elif "svelte" in args.template:
+                framework_plugin_import = (
+                    "import { svelte } from '@sveltejs/vite-plugin-svelte'"
                 )
-            else:
-                # Create a default vite.config.js for templates that don't have one (like vanilla)
-                vite_config_path = target / "frontend" / "vite.config.js"
-                vite_config_path.write_text(
-                    "import { defineConfig } from 'vite'\nimport legacy from '@vitejs/plugin-legacy'\n\nexport default defineConfig({\n  base: './',\n  plugins: [\n    legacy({\n      targets: ['defaults', 'not IE 11'],\n    }),\n  ],\n})\n"
-                )
-                log(
-                    "Created Vite config for relative paths and legacy polyfills",
-                    style="success",
-                )
+                framework_plugin_usage = "svelte(),"
+
+            vite_conf_content = f"""
+import {{ defineConfig }} from 'vite'
+import legacy from '@vitejs/plugin-legacy'
+import {{ resolve }} from 'path'
+
+{framework_plugin_import}
+
+// Pytron Enforced Config ({args.template})
+export default defineConfig({{
+  base: './', // Critical for file:// protocol
+  plugins: [
+    {framework_plugin_usage}
+    legacy({{
+      targets: ['defaults', 'not IE 11'],
+    }}),
+  ],
+  resolve: {{
+    alias: {{
+      '@': resolve(__dirname, './src'),
+    }},
+  }},
+}})
+"""
+            vite_config_path.write_text(vite_conf_content)
+            log(
+                "Configured Vite for relative paths and legacy polyfills (forced overwrite)",
+                style="success",
+            )
+
+            # --- INJECT STARTER CODE ---
+            if "react" in args.template:
+                app_jsx = target / "frontend" / "src" / "App.jsx"
+                if not app_jsx.exists():
+                    app_jsx = target / "frontend" / "src" / "App.tsx"
+
+                if app_jsx.exists():
+                    app_jsx.write_text(
+                        """import { useState } from 'react'
+import pytron from 'pytron-client'
+import './App.css'
+
+function App() {
+  const [msg, setMsg] = useState("Click to greet Python 🐍")
+
+  const handleGreet = async () => {
+    try {
+      const response = await pytron.greet("React Developer")
+      setMsg(response)
+    } catch (err) {
+      console.error(err)
+      setMsg("Error: Check console (Is Python running?)")
+    }
+  }
+
+  return (
+    <div style={{ textAlign: "center", marginTop: "50px", fontFamily: "system-ui" }}>
+        <h1>⚡ Pytron + React</h1>
+        <p style={{ fontSize: "1.2rem", color: "#666" }}>{msg}</p>
+        <button 
+          onClick={handleGreet}
+          style={{ padding: "10px 20px", fontSize: "1rem", cursor: "pointer" }}
+        >
+          Call Backend
+        </button>
+    </div>
+  )
+}
+
+export default App
+"""
+                    )
+                    log(
+                        "Injected React starter code with Pytron Client",
+                        style="success",
+                    )
+
+            elif "vue" in args.template:
+                app_vue = target / "frontend" / "src" / "App.vue"
+                if app_vue.exists():
+                    app_vue.write_text(
+                        """<script setup>
+import { ref } from 'vue'
+import pytron from 'pytron-client'
+
+const msg = ref("Click to greet Python 🐍")
+
+async function greet() {
+  try {
+    msg.value = await pytron.greet("Vue Developer")
+  } catch (err) {
+    console.error(err)
+    msg.value = "Error: " + err
+  }
+}
+</script>
+
+<template>
+  <div class="container">
+    <h1>⚡ Pytron + Vue</h1>
+    <p class="msg">{{ msg }}</p>
+    <button @click="greet">Call Backend</button>
+  </div>
+</template>
+
+<style scoped>
+.container {
+  text-align: center;
+  margin-top: 50px;
+  font-family: system-ui;
+}
+.msg {
+  font-size: 1.2rem;
+  color: #666;
+}
+button {
+  padding: 10px 20px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+</style>
+"""
+                    )
+                    log("Injected Vue starter code with Pytron Client", style="success")
 
         except subprocess.CalledProcessError as e:
             log(f"Failed to initialize Vite app: {e}", style="error")

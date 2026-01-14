@@ -1,0 +1,6 @@
+{
+    "dependencies": [
+        "pytron-kit==0.3.2"
+    ],
+    "plugins": []
+}

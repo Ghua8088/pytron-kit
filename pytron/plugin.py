@@ -155,6 +155,15 @@ class Plugin:
         """Whether this plugin should run in its own process/venv."""
         return self.manifest.get("isolated", False)
 
+    def check_js_dependencies(self) -> bool:
+        """
+        Checks if JS dependencies are installed (rudimentary check for node_modules).
+        """
+        if not self.npm_dependencies:
+            return True
+        node_modules = os.path.join(self.directory, "node_modules")
+        return os.path.exists(node_modules) and os.path.isdir(node_modules)
+
     def check_dependencies(self) -> bool:
         """
         Checks if Python dependencies are installed.
@@ -177,12 +186,23 @@ class Plugin:
         """
         Attempts to install missing Python and JS dependencies.
         """
+        # GUARD: Do not install dependencies in packaged/frozen apps.
+        if getattr(sys, "frozen", False):
+            self.logger.info(
+                f"Skipping dependency install for '{self.name}' (Frozen Environment)"
+            )
+            return
+
         # 1. Python Dependencies
         py_deps = self.python_dependencies
         if py_deps:
-            self.logger.info(
-                f"Installing Python dependencies for {self.name}: {py_deps}"
-            )
+            # Check if they are already installed to avoid redundant operations
+            if self.check_dependencies():
+                self.logger.debug(f"Python dependencies for {self.name} are satisfied.")
+            else:
+                self.logger.info(
+                    f"Installing Python dependencies for {self.name}: {py_deps}"
+                )
             try:
                 # Resolve the project's virtual environment if it exists
                 python_exe = sys.executable
@@ -203,6 +223,10 @@ class Plugin:
         # 2. JS Dependencies
         js_deps = self.npm_dependencies
         if js_deps:
+            if self.check_js_dependencies():
+                self.logger.debug(f"JS dependencies for {self.name} are satisfied.")
+                return
+
             # ISOLATION: Install inside the plugin directory
             target_dir = self.directory
 
@@ -289,12 +313,17 @@ class Plugin:
 
                 # To support local imports inside the plugin folder, we briefly add to path
                 # only during the execution of the module.
-                _old_path = sys.path[:]
-                try:
+                path_added = False
+                if plugin_dir not in sys.path:
                     sys.path.insert(0, plugin_dir)
+                    path_added = True
+
+                try:
                     spec.loader.exec_module(self.module)
+                except ImportError as e:
+                    raise PluginError(f"Import Error in {self.name}: {e}")
                 finally:
-                    if plugin_dir in sys.path:
+                    if path_added and plugin_dir in sys.path:
                         sys.path.remove(plugin_dir)
             else:
                 raise PluginError(f"Could not load module spec for {self.name}")
@@ -309,6 +338,10 @@ class Plugin:
 
             def init_plugin():
                 try:
+                    self.logger.debug(
+                        f"Initializing entry point: {entry_obj} (Type: {type(entry_obj).__name__})"
+                    )
+
                     # 1. If it's a function, call it with `supervised_app`
                     if callable(entry_obj) and not isinstance(entry_obj, type):
                         self.logger.info(
@@ -350,6 +383,21 @@ class Plugin:
                         # If the class has a 'setup' method, call it
                         if hasattr(self.instance, "setup"):
                             self.instance.setup()
+
+                    else:
+                        self.logger.error(
+                            f"Entry point '{object_name}' is not callable. Got type: {type(entry_obj)}"
+                        )
+
+                except TypeError as e:
+                    if "NoneType" in str(e) and "callable" in str(e):
+                        self.logger.error(
+                            f"CRITICAL: 'NoneType' object is not callable in {self.name}. Check if entry point is valid or if dependencies are missing."
+                        )
+                    self.logger.error(
+                        f"Plugin '{self.name}' initialization crash (TypeError): {e}"
+                    )
+                    self.logger.debug(traceback.format_exc())
                 except Exception as e:
                     self.logger.error(f"Plugin '{self.name}' initialization crash: {e}")
                     self.logger.debug(traceback.format_exc())

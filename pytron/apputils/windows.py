@@ -21,7 +21,15 @@ class WindowMixin:
             target_url = self.config.get("url")
 
         window_config["navigate_on_init"] = False
-        window = Webview(config=window_config)
+
+        # Engine Selection
+        if getattr(self, "engine", "native") == "chrome":
+            from ..engines.chrome.engine import ChromeWebView
+
+            window = ChromeWebView(config=window_config)
+        else:
+            window = Webview(config=window_config)
+
         self.windows.append(window)
         for name, data in self._exposed_functions.items():
             func = data["func"]
