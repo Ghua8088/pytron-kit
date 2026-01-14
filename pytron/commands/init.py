@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import subprocess
 import sys
 import shutil
@@ -23,7 +23,7 @@ def main():
     # Expose Python function to Frontend
     @app.expose
     def greet(name):
-        return f"Hello, {name}! From Python 🐍"
+        return f"Hello, {name}! From Python"
 
     app.run()
 
@@ -52,7 +52,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     # Create app.py
     app_file = target / "app.py"
-    app_file.write_text(TEMPLATE_APP)
+    app_file.write_text(TEMPLATE_APP, encoding="utf-8")
 
     # Create settings.json
     is_next = args.template.lower() in ["next", "nextjs"]
@@ -72,7 +72,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         "version": "1.0.0",
         "author": "Your Name",
         "description": "A brief description of your app",
-        "copyright": f"Copyright © 2026 Your Name",
+        "copyright": f"Copyright Â© 2026 Your Name",
         "pytron_version": __version__,
         # Window Configuration
         "dimensions": [800, 600],
@@ -177,7 +177,7 @@ const nextConfig = {
 
 export default nextConfig;
 """
-            next_config_path.write_text(next_conf_content)
+            next_config_path.write_text(next_conf_content, encoding="utf-8")
             log(
                 "Configured Next.js for static export (forced overwrite)",
                 style="success",
@@ -327,7 +327,7 @@ export default defineConfig({{
   }},
 }})
 """
-            vite_config_path.write_text(vite_conf_content)
+            vite_config_path.write_text(vite_conf_content, encoding="utf-8")
             log(
                 "Configured Vite for relative paths and legacy polyfills (forced overwrite)",
                 style="success",
@@ -346,7 +346,7 @@ import pytron from 'pytron-client'
 import './App.css'
 
 function App() {
-  const [msg, setMsg] = useState("Click to greet Python 🐍")
+  const [msg, setMsg] = useState("Click to greet Python ")
 
   const handleGreet = async () => {
     try {
@@ -360,7 +360,7 @@ function App() {
 
   return (
     <div style={{ textAlign: "center", marginTop: "50px", fontFamily: "system-ui" }}>
-        <h1>⚡ Pytron + React</h1>
+        <h1> Pytron + React</h1>
         <p style={{ fontSize: "1.2rem", color: "#666" }}>{msg}</p>
         <button 
           onClick={handleGreet}
@@ -388,7 +388,7 @@ export default App
 import { ref } from 'vue'
 import pytron from 'pytron-client'
 
-const msg = ref("Click to greet Python 🐍")
+const msg = ref("Click to greet Python ")
 
 async function greet() {
   try {
@@ -402,7 +402,7 @@ async function greet() {
 
 <template>
   <div class="container">
-    <h1>⚡ Pytron + Vue</h1>
+    <h1>Pytron + Vue</h1>
     <p class="msg">{{ msg }}</p>
     <button @click="greet">Call Backend</button>
   </div>
@@ -479,7 +479,7 @@ button {
             )
         else:
             run_script = target / "run.sh"
-            run_script.write_text("#!/bin/bash\nsource env/bin/activate\npython app.py")
+            run_script.write_text("#!/bin/bash\nsource env/bin/activate\npython app.py", encoding="utf-8")
             # Make it executable
             try:
                 run_script.chmod(run_script.stat().st_mode | 0o111)
