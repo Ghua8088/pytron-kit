@@ -1,5 +1,11 @@
 import ctypes
-import ctypes.wintypes
+try:
+    import ctypes.wintypes
+except ImportError:
+    class MockWintypes:
+        HWND = ctypes.c_void_p
+        BOOL = ctypes.c_int
+    ctypes.wintypes = MockWintypes
 from .interface import PlatformInterface
 from .windows_ops import window, system, webview
 
@@ -59,11 +65,15 @@ class WindowsImplementation(PlatformInterface):
         # Harden IsWindow check
         if not hwnd:
             return False
-        # IsWindow takes HWND, returns BOOL (int)
-        user32 = ctypes.windll.user32
-        user32.IsWindow.argtypes = [ctypes.wintypes.HWND]
-        user32.IsWindow.restype = ctypes.wintypes.BOOL
-        return bool(user32.IsWindow(hwnd))
+
+        try:
+            # IsWindow takes HWND, returns BOOL (int)
+            user32 = ctypes.windll.user32
+            user32.IsWindow.argtypes = [ctypes.wintypes.HWND]
+            user32.IsWindow.restype = ctypes.wintypes.BOOL
+            return bool(user32.IsWindow(hwnd))
+        except (AttributeError, ValueError):
+            return False
 
     def show(self, w):
         window.show(w)

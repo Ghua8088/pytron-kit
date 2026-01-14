@@ -9,91 +9,116 @@ try:
 except ImportError:
     winreg = None
 
+try:
+    import ctypes.wintypes
+except ImportError:
+    # Safe fallback for non-Windows imports
+    class MockWintypes:
+        HWND = ctypes.c_void_p
+        BOOL = ctypes.c_int
+        WPARAM = ctypes.c_void_p
+        LPARAM = ctypes.c_void_p
+        RECT = ctypes.c_void_p
+
+    ctypes.wintypes = MockWintypes
+
 # -------------------------------------------------------------------
 # Hardened Library Wrappers
 # -------------------------------------------------------------------
-user32 = ctypes.windll.user32
-shell32 = ctypes.windll.shell32
-kernel32 = ctypes.windll.kernel32
+try:
+    user32 = ctypes.windll.user32
+    shell32 = ctypes.windll.shell32
+    kernel32 = ctypes.windll.kernel32
+    comdlg32 = ctypes.windll.comdlg32
+except AttributeError:
+    # Non-Windows Platform
+    user32 = None
+    shell32 = None
+    kernel32 = None
+    comdlg32 = None
 
-# --- USER32 ---
-user32.LoadImageW.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_wchar_p,
-    ctypes.c_uint,
-    ctypes.c_int,
-    ctypes.c_int,
-    ctypes.c_uint,
-]
-user32.LoadImageW.restype = ctypes.c_void_p  # HANDLE
 
-user32.LoadIconW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]  # Used with ID
-user32.LoadIconW.restype = ctypes.c_void_p
+if user32 and shell32 and kernel32 and comdlg32:
+    # --- USER32 ---
+    user32.LoadImageW.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_wchar_p,
+        ctypes.c_uint,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_uint,
+    ]
+    user32.LoadImageW.restype = ctypes.c_void_p  # HANDLE
 
-user32.MessageBoxW.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_wchar_p,
-    ctypes.c_wchar_p,
-    ctypes.c_uint,
-]
-user32.MessageBoxW.restype = ctypes.c_int
+    user32.LoadIconW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]  # Used with ID
+    user32.LoadIconW.restype = ctypes.c_void_p
 
-user32.SendMessageW.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_uint,
-    ctypes.wintypes.WPARAM,
-    ctypes.wintypes.LPARAM,
-]
-user32.SendMessageW.restype = ctypes.c_longlong  # LRESULT can be 64-bit
+    user32.MessageBoxW.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_wchar_p,
+        ctypes.c_wchar_p,
+        ctypes.c_uint,
+    ]
+    user32.MessageBoxW.restype = ctypes.c_int
 
-user32.OpenClipboard.argtypes = [ctypes.c_void_p]
-user32.OpenClipboard.restype = ctypes.wintypes.BOOL
+    user32.SendMessageW.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint,
+        ctypes.wintypes.WPARAM,
+        ctypes.wintypes.LPARAM,
+    ]
+    user32.SendMessageW.restype = ctypes.c_longlong  # LRESULT can be 64-bit
 
-user32.EmptyClipboard.argtypes = []
-user32.EmptyClipboard.restype = ctypes.wintypes.BOOL
+    user32.OpenClipboard.argtypes = [ctypes.c_void_p]
+    user32.OpenClipboard.restype = ctypes.wintypes.BOOL
 
-user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
-user32.SetClipboardData.restype = ctypes.c_void_p
+    user32.EmptyClipboard.argtypes = []
+    user32.EmptyClipboard.restype = ctypes.wintypes.BOOL
 
-user32.CloseClipboard.argtypes = []
-user32.CloseClipboard.restype = ctypes.wintypes.BOOL
+    user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+    user32.SetClipboardData.restype = ctypes.c_void_p
 
-user32.GetClipboardData.argtypes = [ctypes.c_uint]
-user32.GetClipboardData.restype = ctypes.c_void_p
+    user32.CloseClipboard.argtypes = []
+    user32.CloseClipboard.restype = ctypes.wintypes.BOOL
 
-# --- SHELL32 ---
-shell32.Shell_NotifyIconW.argtypes = [ctypes.c_ulong, ctypes.POINTER(NOTIFYICONDATAW)]
-shell32.Shell_NotifyIconW.restype = ctypes.wintypes.BOOL
+    user32.GetClipboardData.argtypes = [ctypes.c_uint]
+    user32.GetClipboardData.restype = ctypes.c_void_p
 
-shell32.SetCurrentProcessExplicitAppUserModelID.argtypes = [ctypes.c_wchar_p]
-shell32.SetCurrentProcessExplicitAppUserModelID.restype = ctypes.c_long  # HRESULT
+    # --- SHELL32 ---
+    shell32.Shell_NotifyIconW.argtypes = [
+        ctypes.c_ulong,
+        ctypes.POINTER(NOTIFYICONDATAW),
+    ]
+    shell32.Shell_NotifyIconW.restype = ctypes.wintypes.BOOL
 
-shell32.SHBrowseForFolderW.argtypes = [ctypes.POINTER(BROWSEINFOW)]
-shell32.SHBrowseForFolderW.restype = ctypes.c_void_p  # PIDLIST_ABSOLUTE
+    shell32.SetCurrentProcessExplicitAppUserModelID.argtypes = [ctypes.c_wchar_p]
+    shell32.SetCurrentProcessExplicitAppUserModelID.restype = ctypes.c_long  # HRESULT
 
-shell32.SHGetPathFromIDListW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
-shell32.SHGetPathFromIDListW.restype = ctypes.wintypes.BOOL
+    shell32.SHBrowseForFolderW.argtypes = [ctypes.POINTER(BROWSEINFOW)]
+    shell32.SHBrowseForFolderW.restype = ctypes.c_void_p  # PIDLIST_ABSOLUTE
 
-shell32.ILFree.argtypes = [ctypes.c_void_p]
-shell32.ILFree.restype = None
+    shell32.SHGetPathFromIDListW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+    shell32.SHGetPathFromIDListW.restype = ctypes.wintypes.BOOL
 
-# --- KERNEL32 ---
-kernel32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
-kernel32.GlobalAlloc.restype = ctypes.c_void_p
+    shell32.ILFree.argtypes = [ctypes.c_void_p]
+    shell32.ILFree.restype = None
 
-kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
-kernel32.GlobalLock.restype = ctypes.c_void_p
+    # --- KERNEL32 ---
+    kernel32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+    kernel32.GlobalAlloc.restype = ctypes.c_void_p
 
-kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
-kernel32.GlobalUnlock.restype = ctypes.wintypes.BOOL
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
 
-# --- COMDLG32 ---
-comdlg32 = ctypes.windll.comdlg32
-comdlg32.GetOpenFileNameW.argtypes = [ctypes.POINTER(OPENFILENAMEW)]
-comdlg32.GetOpenFileNameW.restype = ctypes.wintypes.BOOL
+    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalUnlock.restype = ctypes.wintypes.BOOL
 
-comdlg32.GetSaveFileNameW.argtypes = [ctypes.POINTER(OPENFILENAMEW)]
-comdlg32.GetSaveFileNameW.restype = ctypes.wintypes.BOOL
+    # --- COMDLG32 ---
+    comdlg32.GetOpenFileNameW.argtypes = [ctypes.POINTER(OPENFILENAMEW)]
+    comdlg32.GetOpenFileNameW.restype = ctypes.wintypes.BOOL
+
+    comdlg32.GetSaveFileNameW.argtypes = [ctypes.POINTER(OPENFILENAMEW)]
+    comdlg32.GetSaveFileNameW.restype = ctypes.wintypes.BOOL
 
 # -------------------------------------------------------------------
 # Operations
@@ -319,7 +344,8 @@ def _init_taskbar():
         return _taskbar_list
     try:
         try:
-            ctypes.windll.ole32.CoInitialize(0)
+            if hasattr(ctypes, "windll"):
+                ctypes.windll.ole32.CoInitialize(0)
         except:
             pass
 
@@ -401,6 +427,8 @@ def set_taskbar_progress(w, state="normal", value=0, max_value=100):
 
 def set_clipboard_text(text: str):
     """Copies text to the system clipboard."""
+    if not user32:
+        return False
     try:
         if not user32.OpenClipboard(0):
             return False
@@ -425,6 +453,8 @@ def set_clipboard_text(text: str):
 
 def get_clipboard_text():
     """Returns text from the system clipboard."""
+    if not user32:
+        return None
     try:
         if not user32.OpenClipboard(0):
             return None

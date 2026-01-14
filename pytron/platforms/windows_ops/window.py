@@ -1,5 +1,9 @@
 import ctypes
-import ctypes.wintypes
+import ctypes
+try:
+    import ctypes.wintypes
+except ImportError:
+    ctypes.wintypes = None
 from .constants import *
 from .utils import get_hwnd
 
