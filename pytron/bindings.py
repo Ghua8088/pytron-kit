@@ -73,7 +73,6 @@ if IS_ANDROID:
         def _send(self, method, args=None):
             # Helper to send data to Java -> WebView
             try:
-                import _pytron_android
                 import json
 
                 payload = {"method": method, "args": args or {}}

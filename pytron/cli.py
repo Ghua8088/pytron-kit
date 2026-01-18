@@ -236,7 +236,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # Plugin List
-    p_plugin_list = plugin_sub.add_parser("list", help="List installed plugins")
+    plugin_sub.add_parser("list", help="List installed plugins")
 
     # Plugin Create
     p_plugin_create = plugin_sub.add_parser("create", help="Scaffold a new plugin")

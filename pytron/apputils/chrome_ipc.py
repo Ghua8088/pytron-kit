@@ -6,6 +6,8 @@ import threading
 import subprocess
 import struct
 import tempfile
+import platform
+import uuid
 
 logger = logging.getLogger("Pytron.ChromeIPC")
 

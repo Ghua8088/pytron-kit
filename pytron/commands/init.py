@@ -1,4 +1,6 @@
-﻿import argparse
+﻿import sys
+import subprocess
+import argparse
 import shutil
 import json
 from pathlib import Path
@@ -443,12 +445,8 @@ button {
         # Determine pip path in new env
         if sys.platform == "win32":
             pip_exe = env_dir / "Scripts" / "pip"
-            python_exe = env_dir / "Scripts" / "python"
-            activate_script = env_dir / "Scripts" / "activate"
         else:
             pip_exe = env_dir / "bin" / "pip"
-            python_exe = env_dir / "bin" / "python"
-            activate_script = env_dir / "bin" / "activate"
 
         log("Installing dependencies in virtual environment...", style="dim")
         progress.update(

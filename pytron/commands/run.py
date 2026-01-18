@@ -16,7 +16,7 @@ from .helpers import (
 )
 
 try:
-    from watchfiles import watch, DefaultFilter
+    from watchfiles import DefaultFilter
 except ImportError:
     DefaultFilter = object
 
