@@ -1,7 +1,7 @@
 import os
 import sys
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import platform
 from pathlib import Path
 from ..console import log, run_command_with_output, console, Rule
@@ -50,7 +50,7 @@ def run_nuitka_build(
         log("Nuitka not found. Installing...", style="warning")
         subprocess.check_call(
             [get_python_executable(), "-m", "pip", "install", "nuitka", "zstandard"]
-        )
+        )  # nosec B603
 
     # NOTE: Using 'out_name' calculated earlier in the function (which is sanitized from settings.get('title'))
     log(f"Debug: Resolving output name: {out_name}", style="dim")
