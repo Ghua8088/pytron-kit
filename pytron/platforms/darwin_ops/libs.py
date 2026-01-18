@@ -20,8 +20,8 @@ def load_libs():
         objc.sel_registerName.restype = ctypes.c_void_p
         objc.sel_registerName.argtypes = [ctypes.c_char_p]
 
-        objc.objc_msgSend.restype = ctypes.c_void_p
-        # Do NOT set argtypes for objc_msgSend as it is variadic
+        # Do NOT set restype/argtypes for objc_msgSend here.
+        # It MUST be cast to the correct signature for every call on ARM64.
 
     except Exception as e:
         print(f"Pytron Warning: Cocoa/ObjC not found: {e}")

@@ -8,6 +8,7 @@ try:
     os.environ.setdefault("PYTHONUTF8", "1")
     os.environ.setdefault("PYTHONIOENCODING", "utf-8:surrogatepass")
 except Exception:
+    # Environment setup is best-effort
     pass
 
 
@@ -24,6 +25,7 @@ def _early_reconfigure():
         try:
             sys.stdout.reconfigure(encoding="utf-8", errors="surrogatepass")
         except Exception:
+            # Fallback failed, cannot reconfigure stdout
             pass
 
     try:
@@ -38,6 +40,7 @@ def _early_reconfigure():
         try:
             sys.stderr.reconfigure(encoding="utf-8", errors="surrogatepass")
         except Exception:
+            # Fallback failed, cannot reconfigure stderr
             pass
 
 
@@ -95,3 +98,15 @@ sys.modules["plugins"] = plugins
 from .core import App, Webview, get_resource_path, Menu, MenuBar
 from .plugin import Plugin
 from .updater import Updater
+
+__all__ = [
+    "App",
+    "Webview",
+    "get_resource_path",
+    "Menu",
+    "MenuBar",
+    "Plugin",
+    "Updater",
+    "plugins",
+    "PluginConfigurator",
+]

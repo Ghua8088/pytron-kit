@@ -1,13 +1,18 @@
 import os
-import sys
 import subprocess
 import platform
+
+import shutil
 
 
 class Shell:
     """
     Native OS Shell utilities for Pytron.
     """
+
+    @staticmethod
+    def _resolve_bin(bin_name):
+        return shutil.which(bin_name) or bin_name
 
     @staticmethod
     def open_external(url: str):
@@ -17,9 +22,11 @@ class Shell:
         if platform.system() == "Windows":
             os.startfile(url)
         elif platform.system() == "Darwin":
-            subprocess.run(["open", url])
+            bin_path = Shell._resolve_bin("open")
+            subprocess.run([bin_path, url])
         else:
-            subprocess.run(["xdg-open", url])
+            bin_path = Shell._resolve_bin("xdg-open")
+            subprocess.run([bin_path, url])
 
     @staticmethod
     def show_item_in_folder(path: str):
@@ -28,12 +35,15 @@ class Shell:
         """
         path = os.path.abspath(path)
         if platform.system() == "Windows":
-            subprocess.run(["explorer", "/select,", path])
+            bin_path = Shell._resolve_bin("explorer")
+            subprocess.run([bin_path, "/select,", path])
         elif platform.system() == "Darwin":
-            subprocess.run(["open", "-R", path])
+            bin_path = Shell._resolve_bin("open")
+            subprocess.run([bin_path, "-R", path])
         else:
             # Linux doesn't have a universal 'select' but we can open the dir
-            subprocess.run(["xdg-open", os.path.dirname(path)])
+            bin_path = Shell._resolve_bin("xdg-open")
+            subprocess.run([bin_path, os.path.dirname(path)])
 
     @staticmethod
     def trash_item(path: str):

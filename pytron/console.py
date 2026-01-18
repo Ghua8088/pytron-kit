@@ -9,7 +9,6 @@ from rich.rule import Rule
 from rich.console import Console
 from rich.theme import Theme
 import subprocess
-import sys
 import os
 import datetime
 
@@ -50,14 +49,14 @@ def set_log_file(path: str | None):
 
 
 def log(
-    msg: str, style: str = "info", title: str = "Pytron", markup: bool = True
+    msg: str, style: str = "info", title: str = "Pytron", markup: bool = False
 ) -> None:
     """Helper to print [Pytron] messages with style and log to file."""
     # Print to console
     try:
         # The title part is always markup (bold)
         console.print(f"[bold][{title}][/bold] ", style=style, end="")
-        # The message part can optionally contain Rich markup (e.g. [bold green]...)
+        # The message part defaults to plain text for safety (e.g. paths with [])
         console.print(msg, style=style, markup=markup)
     except Exception:
         # Fallback to plain print if the style or markup is invalid
@@ -109,7 +108,7 @@ def run_command_with_output(
             env=env,
             bufsize=1,  # Line buffered
             shell=shell,
-        )
+        )  # nosec B602
 
         for line in process.stdout:
             # Strip only trailing newline to preserve some formatting (or strip both?)

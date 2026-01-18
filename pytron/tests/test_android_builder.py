@@ -1,8 +1,6 @@
-import os
-import sys
 import pytest
 import subprocess
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import patch
 from pytron.platforms.android.builder import AndroidBuilder
 
 

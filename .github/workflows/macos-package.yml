@@ -1,0 +1,48 @@
+name: Package App (macOS)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    name: Build macOS Application
+    runs-on: macos-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Pytron & Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install . 
+          # Or pip install pytron-kit if published
+          
+          # Install macOS specific requirements for features like shortcuts
+          pip install pyobjc-framework-Quartz pyobjc-framework-Cocoa
+          
+          pytron install
+
+      - name: Build and Package
+        # We use --smart-assets to ensure images/configs are bundled
+        # On macOS, this will produce a .app and potentially a .dmg if configured
+        run: pytron package 
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytron-macos-build
+          path: dist/

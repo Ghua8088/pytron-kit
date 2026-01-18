@@ -1,6 +1,5 @@
 from pytron import App
 from pydantic import BaseModel
-from typing import List
 import uuid
 
 app = App()

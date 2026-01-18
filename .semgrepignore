@@ -1,0 +1,3 @@
+# Ignore the manifest because the exported activity is intentional
+pytron/platforms/android/shell/app/src/main/AndroidManifest.xml
+node_modules/

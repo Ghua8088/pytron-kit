@@ -1,6 +1,6 @@
 import os
 import sys
-import subprocess
+import subprocess  # nosec B404
 import platform
 from pathlib import Path
 from ..console import log, run_command_with_output, console, Rule

@@ -1,16 +1,12 @@
 import os
 import sys
 import shutil
-import subprocess
 import secrets
 import traceback
-import json
-import struct
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from ..console import log, run_command_with_output, console, Rule
 from .installers import build_installer
-from .utils import cleanup_dist
 from ..commands.helpers import get_python_executable, get_venv_site_packages
 from ..commands.harvest import generate_nuclear_hooks
 
@@ -318,8 +314,6 @@ def run_secure_build(
         else:
             log(f"Using existing shield key from .env", style="dim")
             key_bytes = bytes.fromhex(boot_key_hex)
-
-        dist_dir = Path("dist") / out_name
         build_dir = Path("build") / "secure_build"
         if build_dir.exists():
             shutil.rmtree(build_dir)
@@ -607,8 +601,8 @@ coll = COLLECT(
 
         try:
             shutil.rmtree(build_dir)
-        except:
-            pass
+        except Exception as e:
+            log(f"Debug: Failed to cleanup build dir: {e}", style="dim")
 
         progress.update(task, description="Shield: Complete!", completed=100)
         progress.stop()

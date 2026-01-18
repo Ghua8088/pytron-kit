@@ -1,5 +1,6 @@
 import subprocess
 import os
+import shutil
 import ctypes
 from . import libs
 
@@ -25,7 +26,8 @@ def message_box(w, title, message, style=0):
     except FileNotFoundError:
         # TRY KDIALOG (KDE)
         try:
-            args = ["kdialog", "--title", title]
+            kdialog = shutil.which("kdialog") or "kdialog"
+            args = [kdialog, "--title", title]
             if style == 4:
                 args += ["--yesno", message]
             else:
@@ -42,7 +44,8 @@ def message_box(w, title, message, style=0):
 def notification(w, title, message, icon=None):
     # Try notify-send
     try:
-        subprocess.Popen(["notify-send", title, message])
+        ns = shutil.which("notify-send") or "notify-send"
+        subprocess.Popen([ns, title, message])  # nosec B603
     except Exception:
         print("Pytron Warning: notify-send not found.")
 
@@ -66,7 +69,7 @@ def _run_subprocess_dialog(title, action, default_path, default_name):
                 path = os.path.join(path, default_name)
             cmd.append(f"--filename={path}")
 
-        output = subprocess.check_output(cmd, text=True).strip()
+        output = subprocess.check_output(cmd, text=True).strip()  # nosec B603
         return output
     except Exception:
         pass
@@ -86,7 +89,7 @@ def _run_subprocess_dialog(title, action, default_path, default_name):
             start_dir = os.path.join(start_dir, default_name)
         cmd.append(start_dir)
 
-        output = subprocess.check_output(cmd, text=True).strip()
+        output = subprocess.check_output(cmd, text=True).strip()  # nosec B603
         return output
     except Exception:
         pass
@@ -115,8 +118,8 @@ def set_app_id(app_id):
         libs.glib.g_set_prgname(app_id.encode("utf-8"))
         libs.glib.g_set_application_name.argtypes = [ctypes.c_char_p]
         libs.glib.g_set_application_name(app_id.encode("utf-8"))
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Pytron] Debug: Failed to set app name: {e}")
 
 
 def set_launch_on_boot(app_name, exe_path, enable=True):
@@ -187,11 +190,14 @@ Terminal=false
 
         # Update mime database and register
         try:
-            subprocess.run(["update-desktop-database", apps_dir], capture_output=True)
+            udd = shutil.which("update-desktop-database") or "update-desktop-database"
+            subprocess.run([udd, apps_dir], capture_output=True)  # nosec B603
+
+            xm = shutil.which("xdg-mime") or "xdg-mime"
             subprocess.run(
-                ["xdg-mime", "default", desktop_filename, f"x-scheme-handler/{scheme}"],
+                [xm, "default", desktop_filename, f"x-scheme-handler/{scheme}"],
                 capture_output=True,
-            )
+            )  # nosec B603
             return True
         except Exception:
             # Fallback if tools are missing
@@ -216,8 +222,6 @@ def enable_drag_drop(w, callback):
         return
 
     # We need dragging constants
-    GTK_DEST_DEFAULT_ALL = 7
-    GDK_ACTION_COPY = 1
 
     # Define Target Entry
     # drag_dest_set expects an array of GtkTargetEntry

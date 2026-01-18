@@ -1,6 +1,9 @@
+import sys
 import pytest
 from unittest.mock import MagicMock, patch
 from pytron.platforms.darwin_ops import window, system, libs
+
+pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="macOS only tests")
 
 
 @pytest.fixture(autouse=True)

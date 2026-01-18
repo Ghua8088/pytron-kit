@@ -1,20 +1,11 @@
 import os
 import sys
-import json
-import inspect
-import typing
-from typing import Optional, List, Dict, Union, Any, Callable
-import shutil
-from .utils import get_resource_path
+from typing import Any
 from .state import ReactiveState
-from .webview import Webview
 from .router import Router
 
-from .serializer import pydantic
-import logging
-from .plugin import Plugin, PluginError
+from .plugin import Plugin
 
-from .tray import SystemTray
 from .shortcuts import ShortcutManager
 from .apputils.codegen import CodegenMixin
 from .apputils.native import NativeMixin
@@ -94,8 +85,8 @@ class App(ConfigMixin, WindowMixin, ExtrasMixin, CodegenMixin, NativeMixin, Shel
                 self.logger.debug("Shutting down thread pool...")
                 try:
                     self.thread_pool.shutdown(wait=False, cancel_futures=True)
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"Error shutting down thread pool: {e}")
                 self.thread_pool = None
 
         # AUTO-CODEGEN: Generate TypeScript definitions in debug mode

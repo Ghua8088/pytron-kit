@@ -328,8 +328,8 @@ def set_launch_on_boot(app_name, exe_path, enable=True):
 def set_app_id(app_id):
     try:
         shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Pytron] Debug: Failed to set app model ID: {e}")
 
 
 # Taskbar Progress (Using COM - Requires valid ITaskbarList3 definition)
@@ -346,8 +346,9 @@ def _init_taskbar():
         try:
             if hasattr(ctypes, "windll"):
                 ctypes.windll.ole32.CoInitialize(0)
-        except:
-            pass
+        except Exception as e:
+            print(f"[Pytron] Debug: Failed to initialize COM: {e}")
+            return None
 
         CLSID_TaskbarList = "{56FDF344-FD6D-11d0-958A-006097C9A090}"
         import comtypes.client
@@ -421,8 +422,8 @@ def set_taskbar_progress(w, state="normal", value=0, max_value=100):
         tbl.SetProgressState(hwnd, flags)
         if state in ("normal", "error", "paused"):
             tbl.SetProgressValue(hwnd, int(value), int(max_value))
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Pytron] Taskbar progress error: {e}")
 
 
 def set_clipboard_text(text: str):

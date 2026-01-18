@@ -1,8 +1,7 @@
-﻿import argparse
+﻿import sys
 import subprocess
-import sys
+import argparse
 import shutil
-import os
 import json
 from pathlib import Path
 from ..console import (
@@ -10,7 +9,6 @@ from ..console import (
     console,
     get_progress,
     print_rule,
-    Rule,
     run_command_with_output,
 )
 from .. import __version__
@@ -157,9 +155,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             cmd = [c for c in cmd if c]
 
             # log output while keeping progress bar alive
-            run_command_with_output(
-                cmd, cwd=str(target), shell=(sys.platform == "win32")
-            )
+            run_command_with_output(cmd, cwd=str(target), shell=False)
 
             progress.update(task, description="Configuring Next.js...", completed=40)
             # Configure Next.js for static export
@@ -225,7 +221,7 @@ export default nextConfig;
                     args.template,
                 ],
                 cwd=str(target),
-                shell=(sys.platform == "win32"),
+                shell=False,
             )
             if ret != 0:
                 raise subprocess.CalledProcessError(ret, "create-vite")
@@ -274,7 +270,7 @@ export default nextConfig;
             ret = run_command_with_output(
                 [provider, "install"],
                 cwd=str(target / "frontend"),
-                shell=(sys.platform == "win32"),
+                shell=False,
             )
             if ret != 0:
                 log(
@@ -449,12 +445,8 @@ button {
         # Determine pip path in new env
         if sys.platform == "win32":
             pip_exe = env_dir / "Scripts" / "pip"
-            python_exe = env_dir / "Scripts" / "python"
-            activate_script = env_dir / "Scripts" / "activate"
         else:
             pip_exe = env_dir / "bin" / "pip"
-            python_exe = env_dir / "bin" / "python"
-            activate_script = env_dir / "bin" / "activate"
 
         log("Installing dependencies in virtual environment...", style="dim")
         progress.update(

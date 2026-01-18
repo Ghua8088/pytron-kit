@@ -1,5 +1,4 @@
 import os
-import sys
 import zipfile
 import shutil
 import requests
@@ -30,7 +29,7 @@ def download_electron(dest_path):
         f"Connecting to Chrome Shell Depository (Electron v{ELECTRON_VERSION})..."
     )
 
-    response = requests.get(url, stream=True)
+    response = requests.get(url, stream=True, timeout=30)
     total_size = int(response.headers.get("content-length", 0))
     temp_zip = os.path.join(dest_path, "electron.zip")
 

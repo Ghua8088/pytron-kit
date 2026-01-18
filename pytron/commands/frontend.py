@@ -1,7 +1,5 @@
 import argparse
-import sys
 import shutil
-import subprocess
 from pathlib import Path
 from .helpers import locate_frontend_dir, get_config
 from ..console import log, run_command_with_output, get_progress
@@ -43,19 +41,15 @@ def cmd_frontend(args: argparse.Namespace) -> int:
             if len(npm_args) > 1
             else f"[{provider}] Installing JS dependencies..."
         )
-        task = prog.add_task(task_msg, total=None)
+        prog.add_task(task_msg, total=None)
         cmd = [provider_bin] + npm_args
-        ret = run_command_with_output(
-            cmd, cwd=str(frontend_dir), shell=(sys.platform == "win32")
-        )
+        ret = run_command_with_output(cmd, cwd=str(frontend_dir), shell=False)
         prog.stop()
     else:
         # For 'run dev', 'build', etc., just stream the output directly
         cmd = [provider_bin] + npm_args
         log(f"Running: {provider} {' '.join(npm_args)}", style="dim")
-        ret = run_command_with_output(
-            cmd, cwd=str(frontend_dir), shell=(sys.platform == "win32")
-        )
+        ret = run_command_with_output(cmd, cwd=str(frontend_dir), shell=False)
 
     if ret == 0:
         log(f"Frontend command ({provider}) completed successfully.", style="success")

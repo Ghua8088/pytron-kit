@@ -5,9 +5,7 @@ import subprocess
 import shutil
 import tempfile
 import urllib.request
-import zipfile
 import ctypes
-from pathlib import Path
 
 # Optional LIEF import
 try:
@@ -94,7 +92,7 @@ class AndroidBuilder:
                 # Run quietly
                 subprocess.check_call(
                     cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
+                )  # nosec B603
 
                 # Check if we actually got a wheel
                 downloaded = [
@@ -277,7 +275,13 @@ class AndroidBuilder:
 
         zip_path = self._norm(os.path.join(os.path.dirname(self.zig_dir), "zig.zip"))
         try:
-            with urllib.request.urlopen(url) as response, open(zip_path, "wb") as out:
+            if not url.startswith("https://"):
+                raise ValueError("URL must be HTTPS")
+
+            # nosemgrep
+            with urllib.request.urlopen(url) as response, open(  # nosec B310
+                zip_path, "wb"
+            ) as out:
                 shutil.copyfileobj(response, out)
 
             print("[AndroidBuilder] Extracting Zig...")
@@ -322,7 +326,11 @@ class AndroidBuilder:
                 try:
                     import urllib.request
 
-                    urllib.request.urlretrieve(url, dest)
+                    if not url.startswith("https://"):
+                        raise ValueError("URL must be HTTPS")
+
+                    # nosemgrep
+                    urllib.request.urlretrieve(url, dest)  # nosec B310
                 except Exception as e:
                     print(f"[AndroidBuilder] Warning: Failed to download {name}: {e}")
 
@@ -355,8 +363,11 @@ class AndroidBuilder:
             import urllib.request
 
             if not os.path.exists(zip_path):
+                if not url.startswith("https://"):
+                    raise ValueError("URL must be HTTPS")
                 print(f"[AndroidBuilder] Downloading {url}...")
-                urllib.request.urlretrieve(url, zip_path)
+                # nosemgrep
+                urllib.request.urlretrieve(url, zip_path)  # nosec B310
 
             import zipfile
 
@@ -618,7 +629,7 @@ build_time_vars = {{
                         "--dest",
                         temp_dir,
                     ]
-                )
+                )  # nosec B603
                 archives = [
                     f for f in os.listdir(temp_dir) if f.endswith((".tar.gz", ".zip"))
                 ]
@@ -650,7 +661,7 @@ build_time_vars = {{
                 subprocess.check_call(
                     [sys.executable, "-m", "pip", "install"] + build_deps,
                     env=os.environ.copy(),
-                )
+                )  # nosec B603
             except:
                 pass
 

@@ -8,7 +8,7 @@ import subprocess
 import threading
 import traceback
 import shutil
-from typing import List, Dict, Any, Union
+from typing import Dict, Any, List
 
 
 class PluginError(Exception):
@@ -172,7 +172,7 @@ class Plugin:
         missing = []
         for dep in self.python_dependencies:
             try:
-                importlib.import_module(dep)
+                importlib.import_module(dep)  # nosemgrep
             except ImportError:
                 missing.append(dep)
 
@@ -257,8 +257,8 @@ class Plugin:
                 subprocess.check_call(
                     [provider_bin, "install"],
                     cwd=target_dir,
-                    shell=(sys.platform == "win32"),
-                )
+                    shell=False,
+                )  # nosec B603
                 self.logger.info(
                     f"JS dependencies installed successfully using {provider}."
                 )

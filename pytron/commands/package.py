@@ -1,5 +1,4 @@
 import argparse
-import sys
 import json
 import os
 from pathlib import Path
@@ -7,7 +6,6 @@ from ..console import (
     console,
     log,
     get_progress,
-    print_rule,
     run_command_with_output,
     Rule,
 )

@@ -1,4 +1,3 @@
-import os
 import shutil
 import subprocess
 import sys
@@ -23,7 +22,10 @@ def build_and_deploy():
 
     # 3. Compile Rust (Release mode)
     try:
-        subprocess.run(["cargo", "build", "--release"], cwd=str(base_dir), check=True)
+        cargo_bin = shutil.which("cargo") or "cargo"
+        subprocess.run(
+            [cargo_bin, "build", "--release"], cwd=str(base_dir), check=True
+        )  # nosec B603
     except FileNotFoundError:
         print("[!] Error: 'cargo' not found. Please install Rust (https://rustup.rs).")
         sys.exit(1)

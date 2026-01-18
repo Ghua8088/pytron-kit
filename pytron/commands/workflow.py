@@ -1,5 +1,4 @@
 import argparse
-import os
 from pathlib import Path
 from ..console import log, console, print_rule
 

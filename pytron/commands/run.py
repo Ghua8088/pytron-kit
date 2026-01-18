@@ -4,8 +4,6 @@ import shutil
 import subprocess
 import json
 import os
-import re
-
 from pathlib import Path
 from ..console import log, console
 from rich.text import Text
@@ -18,7 +16,7 @@ from .helpers import (
 )
 
 try:
-    from watchfiles import watch, DefaultFilter
+    from watchfiles import DefaultFilter
 except ImportError:
     DefaultFilter = object
 
@@ -114,13 +112,13 @@ def run_dev_mode(script: Path, extra_args: list[str], engine: str = None) -> int
                 npm_proc = subprocess.Popen(
                     [provider_bin, "run", "dev"],
                     cwd=str(frontend_dir),
-                    shell=(sys.platform == "win32"),
+                    shell=False,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     env=proc_env,
                     text=True,
                     bufsize=1,
-                )
+                )  # nosec B603
 
                 # Scan for URL in a background thread
                 import threading
@@ -208,8 +206,8 @@ def run_dev_mode(script: Path, extra_args: list[str], engine: str = None) -> int
                 npm_proc = subprocess.Popen(
                     [provider_bin] + args,
                     cwd=str(frontend_dir),
-                    shell=(sys.platform == "win32"),
-                )
+                    shell=False,
+                )  # nosec B603
         else:
             log(f"{provider} not found, skipping frontend watch.", style="warning")
 

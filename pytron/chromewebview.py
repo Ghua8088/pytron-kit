@@ -1,16 +1,7 @@
 import os
-import sys
 import json
 import logging
-import threading
-import subprocess
-import time
-import uuid
-import platform
-import ctypes
-import pathlib
 from .webview import Webview
-from .serializer import pytron_serialize
 
 logger = logging.getLogger("Pytron.ChromeWebView")
 

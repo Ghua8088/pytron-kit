@@ -327,7 +327,7 @@ def set_menu(w, menu_bar):
     if not hwnd:
         return
 
-    h_menu = menu_bar.build_for_windows(hwnd)
+    menu_bar.build_for_windows(hwnd)
 
     WNDPROC = ctypes.WINFUNCTYPE(
         ctypes.c_longlong,

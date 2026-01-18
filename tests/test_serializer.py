@@ -1,5 +1,4 @@
 import pytest
-import json
 import datetime
 import uuid
 import decimal

@@ -3,7 +3,6 @@ import shutil
 import subprocess
 from pathlib import Path
 from .helpers import get_config
-import sys
 
 
 def cmd_build_frontend(args: argparse.Namespace) -> int:
@@ -23,5 +22,5 @@ def cmd_build_frontend(args: argparse.Namespace) -> int:
     return subprocess.call(
         [provider_bin, "run", "build"],
         cwd=str(folder),
-        shell=(sys.platform == "win32"),
-    )
+        shell=False,
+    )  # nosec B603

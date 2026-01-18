@@ -14,8 +14,7 @@ import os
 from .bindings import lib, dispatch_callback, BindCallback, IS_ANDROID
 import base64
 from .serializer import pytron_serialize
-from .exceptions import ResourceNotFoundError, BridgeError, ConfigError
-from .platforms.interface import PlatformInterface
+from .exceptions import ConfigError
 
 
 # -------------------------------------------------------------------

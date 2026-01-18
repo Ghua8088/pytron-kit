@@ -1,7 +1,5 @@
 from ..console import log
 from ..engines.chrome.forge import setup_engine
-import os
-import sys
 
 
 def cmd_engine(args):

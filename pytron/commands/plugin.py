@@ -1,6 +1,5 @@
 import argparse
 import os
-import sys
 import shutil
 import zipfile
 import requests
@@ -206,7 +205,7 @@ def perform_plugin_install(identifier: str) -> int:
             api_url = f"https://api.github.com/repos/{username}/{repo}/releases/tags/{version}"
 
         log(f"Fetching release info from: {api_url}")
-        response = requests.get(api_url, headers=headers)
+        response = requests.get(api_url, headers=headers, timeout=30)
 
         if response.status_code == 404:
             log(
@@ -233,7 +232,7 @@ def perform_plugin_install(identifier: str) -> int:
 
         # Download
         log(f"Downloading from: {zip_url}")
-        zip_response = requests.get(zip_url, headers=headers, stream=True)
+        zip_response = requests.get(zip_url, headers=headers, stream=True, timeout=30)
         zip_tmp = Path("plugin_tmp.zip")
 
         with open(zip_tmp, "wb") as f:
@@ -309,7 +308,7 @@ def install_dependencies(plugin_path: Path):
             # USE THE PROJECT'S VENV PYTHON
             python_exe = get_python_executable()
             cmd = [python_exe, "-m", "pip", "install"] + py_deps
-            subprocess.check_call(cmd)
+            subprocess.check_call(cmd)  # nosec B603
 
         # 2. Handle JS Dependencies
         js_deps = data.get(
@@ -350,8 +349,8 @@ def install_dependencies(plugin_path: Path):
                 # Most managers use 'install', but we should be safe
                 install_cmd = "install"
                 subprocess.check_call(
-                    [provider_bin, install_cmd], cwd=target_dir, shell=(os.name == "nt")
-                )
+                    [provider_bin, install_cmd], cwd=target_dir, shell=False
+                )  # nosec B603
 
     except subprocess.CalledProcessError as e:
         log(f"Dependency installation failed: {e}", style="error")

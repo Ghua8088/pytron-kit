@@ -4,10 +4,10 @@ import json
 import logging
 import threading
 import subprocess
-import time
-import uuid
-import platform
 import struct
+import tempfile
+import platform
+import uuid
 
 logger = logging.getLogger("Pytron.ChromeIPC")
 
@@ -27,7 +27,7 @@ class ChromeIPCServer:
     def listen(self):
         if platform.system() == "Windows":
             import ctypes
-            from ctypes import windll, wintypes
+            from ctypes import windll
 
             # Constants
             PIPE_ACCESS_DUPLEX = 0x00000003
@@ -66,7 +66,7 @@ class ChromeIPCServer:
             import socket
 
             self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            sock_path = f"/tmp/{self.pipe_name}"
+            sock_path = os.path.join(tempfile.gettempdir(), self.pipe_name)
             if os.path.exists(sock_path):
                 os.remove(sock_path)
             self.sock.bind(sock_path)
@@ -76,8 +76,6 @@ class ChromeIPCServer:
 
     def read_loop(self, callback):
         """Reads length-prefixed messages."""
-        import ctypes
-        from ctypes import windll, byref, c_ulong, create_string_buffer
 
         while self.connected:
             try:
@@ -104,7 +102,6 @@ class ChromeIPCServer:
         self.connected = False
 
     def _raw_read(self, n):
-        import ctypes
         from ctypes import windll, byref, c_ulong, create_string_buffer
 
         if platform.system() == "Windows":
@@ -127,7 +124,6 @@ class ChromeIPCServer:
             full_msg = header + body
 
             if platform.system() == "Windows":
-                import ctypes
                 from ctypes import windll, byref, c_ulong
 
                 bytes_written = c_ulong(0)
@@ -162,7 +158,7 @@ class ChromeAdapter:
         full_pipe_path = (
             f"\\\\.\\pipe\\{self.pipe_name}"
             if platform.system() == "Windows"
-            else f"/tmp/{self.pipe_name}"
+            else os.path.join(tempfile.gettempdir(), self.pipe_name)
         )
 
         cmd = [self.binary_path, f"--pytron-pipe={full_pipe_path}"]

@@ -84,7 +84,7 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
 
         progress = get_progress()
         progress.start()
-        task = progress.add_task("Uninstalling...", total=None)
+        progress.add_task("Uninstalling...", total=None)
 
         # -y for non-interactive uninstall
         # We pass original args to pip because pip handles paths if it knows the package name is installed from it

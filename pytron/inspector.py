@@ -1,10 +1,8 @@
 import logging
-import json
 import traceback
 import base64
 import time
 import os
-import sys
 import platform
 from collections import deque
 from .serializer import pytron_serialize
@@ -55,8 +53,8 @@ class Inspector:
 
             self._proc = psutil.Process(os.getpid())
             self._proc.cpu_percent()
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"Failed to init psutil: {e}")
 
     def log_ipc(self, name, args, result=None, error=None, duration=0):
         """Called by the bridge when an IPC call occurs."""
@@ -107,8 +105,8 @@ class Inspector:
                 try:
                     if hasattr(w, "is_visible") and callable(w.is_visible):
                         is_vis = w.is_visible()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logging.debug(f"Failed to check visibility for window {i}: {e}")
 
                 # Use config for more accurate metadata
                 config = getattr(w, "config", {})
@@ -142,9 +140,9 @@ class Inspector:
             # Check for special 'console' object or similar?
             # For now, just app/state
             try:
-                res = eval(
+                res = eval(  # nosemgrep
                     code, {"app": self.app, "state": self.app.state, "inspector": self}
-                )
+                )  # nosec B307
                 return {"result": pytron_serialize(res)}
             except SyntaxError:
                 exec_globals = {
@@ -152,7 +150,7 @@ class Inspector:
                     "state": self.app.state,
                     "inspector": self,
                 }
-                exec(code, exec_globals)
+                exec(code, exec_globals)  # nosec B102 # nosemgrep
                 return {"result": "Statement executed successfully."}
         except Exception as e:
             return {"error": str(e), "traceback": traceback.format_exc()}

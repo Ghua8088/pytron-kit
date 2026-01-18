@@ -1,6 +1,7 @@
 import os
 from ....console import log
 from .utils import run_command
+import stat
 
 
 def build_android_project(project_root: str, is_aab: bool = False) -> None:
@@ -16,7 +17,7 @@ def build_android_project(project_root: str, is_aab: bool = False) -> None:
     # Ensure gradlew is executable
     gradlew = os.path.join(target_android_dir, "gradlew")
     if os.name != "nt" and os.path.exists(gradlew):
-        os.chmod(gradlew, 0o755)
+        os.chmod(gradlew, stat.S_IRWXU)
 
     if is_aab:
         log("Building Android App Bundle (.aab) for Release...", style="info")

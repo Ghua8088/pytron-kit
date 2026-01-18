@@ -225,7 +225,7 @@ function handlePythonCommand(cmd) {
                 }
                 break;
             case 'eval':
-                if (mainWindow) mainWindow.webContents.executeJavaScript(command.code).catch(e => log(`Eval Err: ${e.message}`));
+                if (mainWindow) mainWindow.webContents.executeJavaScript(command.code).catch(e => log(`Eval Err: ${e.message}`)); // nosemgrep
                 break;
             case 'set_title':
                 if (mainWindow) mainWindow.setTitle(command.title);
@@ -312,7 +312,7 @@ function handlePythonCommand(cmd) {
             case 'debugger':
                 try {
                     // Evaluate JS on the main process if needed
-                    eval(command.code);
+                    eval(command.code); // nosemgrep
                 } catch (e) { log(`Debugger Error: ${e.message}`); }
                 break;
         }

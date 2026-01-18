@@ -1,7 +1,7 @@
 import os
 import sys
 import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 from pytron.apputils.windows import WindowMixin
 
 
