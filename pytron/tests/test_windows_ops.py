@@ -1,7 +1,9 @@
+import sys
 import pytest
 from unittest.mock import MagicMock, patch
 from pytron.platforms.windows_ops import window, system, constants
 
+pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows only tests")
 
 @pytest.fixture(autouse=True)
 def mock_hwnd_window():
