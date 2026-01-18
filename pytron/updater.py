@@ -51,7 +51,9 @@ class Updater:
             if not url.startswith("https://"):
                 raise ValueError("Updater only supports HTTPS")
 
-            with urllib.request.urlopen(url, timeout=5) as response:  # nosec B310 # nosemgrep
+            with urllib.request.urlopen(
+                url, timeout=5
+            ) as response:  # nosec B310 # nosemgrep
                 data = json.loads(response.read().decode())
                 remote_version = data.get("version")
 
@@ -122,7 +124,9 @@ class Updater:
                     percent = min(100, int((downloaded / total_size) * 100))
                     on_progress(percent)
 
-            urllib.request.urlretrieve(url, patch_dest, reporthook=progress)  # nosec B310 # nosemgrep
+            urllib.request.urlretrieve(
+                url, patch_dest, reporthook=progress
+            )  # nosec B310 # nosemgrep
             self.logger.info("Evolution patch downloaded successfully.")
 
             # Since the Rust loader handles patching on launch, we just need to restart
@@ -160,7 +164,9 @@ class Updater:
                     percent = min(100, int((block_num * block_size / total_size) * 100))
                     on_progress(percent)
 
-            urllib.request.urlretrieve(url, download_path, reporthook=progress)  # nosec B310 # nosemgrep
+            urllib.request.urlretrieve(
+                url, download_path, reporthook=progress
+            )  # nosec B310 # nosemgrep
             self.logger.info(f"Download complete: {download_path}")
 
             if sys.platform == "win32":

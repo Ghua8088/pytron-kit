@@ -280,9 +280,11 @@ class AndroidBuilder:
             if not url.startswith("https://"):
                 raise ValueError("URL must be HTTPS")
 
-            with urllib.request.urlopen(url) as response, open(  # nosec B310 # nosemgrep
+            with urllib.request.urlopen(
+                url
+            ) as response, open(  # nosec B310 # nosemgrep
                 zip_path, "wb"
-            ) as out: 
+            ) as out:
                 shutil.copyfileobj(response, out)
 
             print("[AndroidBuilder] Extracting Zig...")
