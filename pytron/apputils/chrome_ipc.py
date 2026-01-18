@@ -8,6 +8,7 @@ import time
 import uuid
 import platform
 import struct
+import tempfile
 
 logger = logging.getLogger("Pytron.ChromeIPC")
 
@@ -66,7 +67,7 @@ class ChromeIPCServer:
             import socket
 
             self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            sock_path = f"/tmp/{self.pipe_name}"
+            sock_path = os.path.join(tempfile.gettempdir(), self.pipe_name)
             if os.path.exists(sock_path):
                 os.remove(sock_path)
             self.sock.bind(sock_path)
@@ -162,7 +163,7 @@ class ChromeAdapter:
         full_pipe_path = (
             f"\\\\.\\pipe\\{self.pipe_name}"
             if platform.system() == "Windows"
-            else f"/tmp/{self.pipe_name}"
+            else os.path.join(tempfile.gettempdir(), self.pipe_name)
         )
 
         cmd = [self.binary_path, f"--pytron-pipe={full_pipe_path}"]

@@ -34,8 +34,8 @@ class NativeMixin:
                 return self.windows[0]._platform.set_launch_on_boot(
                     safe_name, exe_path, enable
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(f"Failed to set start on boot via window: {e}")
 
         # Fallback if no window yet or needed
         try:
@@ -105,8 +105,8 @@ class NativeMixin:
                 try:
                     window.system_notification(title, message, icon=icon)
                     break
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"Failed to send notification via window {window}: {e}")
 
     def copy_to_clipboard(self, text: str):
         """Copies text to the system clipboard."""

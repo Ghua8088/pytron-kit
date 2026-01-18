@@ -112,15 +112,15 @@ class ConfigMixin:
                 from ..platforms.linux import LinuxImplementation
 
                 LinuxImplementation().set_app_id(safe_title)
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(f"Failed to set Linux App ID: {e}")
         elif sys.platform == "darwin":
             try:
                 from ..platforms.darwin import DarwinImplementation
 
                 DarwinImplementation().set_app_id(title)
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(f"Failed to set Darwin App ID: {e}")
         return app_id
 
     def _setup_single_instance(self, app_id):
@@ -134,7 +134,8 @@ class ConfigMixin:
             return
 
         # Generate a stable port between 10000-60000 based on app_id
-        port = 10000 + (int(hashlib.md5(app_id.encode()).hexdigest(), 16) % 50000)
+        # B324: Use SHA256 instead of MD5 for port generation stability
+        port = 10000 + (int(hashlib.sha256(app_id.encode()).hexdigest(), 16) % 50000)
         self._instance_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         try:
@@ -170,8 +171,8 @@ class ConfigMixin:
             def _close_instance_socket():
                 try:
                     self._instance_socket.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"Error closing instance socket: {e}")
 
         except socket.error:
             # Instance already running!

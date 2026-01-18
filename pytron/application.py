@@ -94,8 +94,8 @@ class App(ConfigMixin, WindowMixin, ExtrasMixin, CodegenMixin, NativeMixin, Shel
                 self.logger.debug("Shutting down thread pool...")
                 try:
                     self.thread_pool.shutdown(wait=False, cancel_futures=True)
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"Error shutting down thread pool: {e}")
                 self.thread_pool = None
 
         # AUTO-CODEGEN: Generate TypeScript definitions in debug mode
