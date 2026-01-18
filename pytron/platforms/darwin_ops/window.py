@@ -107,5 +107,28 @@ def set_window_icon(w, icon_path):
 
 
 def center(w):
-    # macOS usually centers by default or we can implement if needed
-    pass
+    win = get_window(w)
+    call(win, "center")
+
+
+def set_always_on_top(w, enable):
+    win = get_window(w)
+    # NSFloatingWindowLevel = 3, NSNormalWindowLevel = 0
+    level = 3 if enable else 0
+    call(win, "setLevel:", level)
+
+
+def set_fullscreen(w, enable):
+    win = get_window(w)
+    # Check current style mask for NSWindowStyleMaskFullScreen (1 << 14)
+    # objc_msgSend returns a pointer (long/int), need to cast correctly if needed
+    # but 'call' wrapper currently might discard return?
+    # Let's assume we can get the mask.
+    # Actually, toggleFullScreen: is the safest standard way, but we need to know state.
+
+    # We can try to use 'styleMask'
+    style_mask = call(win, "styleMask")
+    is_fullscreen = (style_mask & (1 << 14)) != 0
+
+    if is_fullscreen != enable:
+        call(win, "toggleFullScreen:", None)

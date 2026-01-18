@@ -49,3 +49,23 @@ def test_system_message_box_zenity():
         mock_check_call.assert_called()
         args = mock_check_call.call_args[0][0]
         assert args[0] == "zenity"
+
+
+def test_window_set_fullscreen(mock_libs, mock_get_window):
+    mock_gtk, _, _, _ = mock_libs
+    # Test Enable
+    window.set_fullscreen("dummy_w", True)
+    mock_gtk.gtk_window_fullscreen.assert_called_with(12345)
+
+    # Test Disable
+    window.set_fullscreen("dummy_w", False)
+    mock_gtk.gtk_window_unfullscreen.assert_called_with(12345)
+
+
+def test_window_set_always_on_top(mock_libs, mock_get_window):
+    mock_gtk, _, _, _ = mock_libs
+    window.set_always_on_top("dummy_w", True)
+    mock_gtk.gtk_window_set_keep_above.assert_called_with(12345, 1)
+
+    window.set_always_on_top("dummy_w", False)
+    mock_gtk.gtk_window_set_keep_above.assert_called_with(12345, 0)

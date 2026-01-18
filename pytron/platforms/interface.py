@@ -44,6 +44,14 @@ class PlatformInterface(ABC):
         pass
 
     @abstractmethod
+    def set_fullscreen(self, w: WindowHandle, fullscreen: bool) -> None:
+        pass
+
+    @abstractmethod
+    def set_always_on_top(self, w: WindowHandle, enable: bool) -> None:
+        pass
+
+    @abstractmethod
     def is_visible(self, w: WindowHandle) -> bool:
         pass
 

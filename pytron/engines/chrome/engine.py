@@ -52,6 +52,10 @@ class ChromeBridge:
                     "start_maximized": self.adapter.config.get(
                         "start_maximized", False
                     ),
+                    "start_minimized": self.adapter.config.get(
+                        "start_minimized", False
+                    ),
+                    "transparent": self.adapter.config.get("transparent", False),
                 },
             }
         )

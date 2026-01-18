@@ -95,3 +95,21 @@ def center(w):
     win = get_window(w)
     # GTK_WIN_POS_CENTER = 1
     libs.gtk.gtk_window_set_position(win, 1)
+
+
+def set_fullscreen(w, enable):
+    if not libs.gtk:
+        return
+    win = get_window(w)
+    if enable:
+        libs.gtk.gtk_window_fullscreen(win)
+    else:
+        libs.gtk.gtk_window_unfullscreen(win)
+
+
+def set_always_on_top(w, enable):
+    if not libs.gtk:
+        return
+    win = get_window(w)
+    # gtk_window_set_keep_above(GtkWindow *window, gboolean setting)
+    libs.gtk.gtk_window_set_keep_above(win, int(enable))

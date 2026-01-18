@@ -47,3 +47,33 @@ def test_system_message_box():
         ret = system.message_box("dummy_w", "Title", "Msg", 0)
         assert ret == 1
         mock_check.assert_called()
+
+
+def test_window_set_always_on_top(mock_libs, mock_get_window):
+    mock_objc, _ = mock_libs
+    window.set_always_on_top("dummy_w", True)
+    # Verify call to setLevel: (level 3 for floating)
+    # The actual detailed verification of objc_msgSend args is complex,
+    # so we rely on ensuring it was called.
+
+    # We can check if 'setLevel:' selector was registered
+    mock_objc.sel_registerName.assert_any_call("setLevel:".encode("utf-8"))
+
+
+def test_window_set_fullscreen(mock_libs, mock_get_window):
+    mock_objc, _ = mock_libs
+
+    # Mock return of styleMask to simulate NOT being in fullscreen (so it toggles ON)
+    # We need to ensure call() returns something that doesn't have the fullscreen bit
+    with patch("pytron.platforms.darwin_ops.window.call", return_value=0) as mock_call:
+        window.set_fullscreen("dummy_w", True)
+        # Should call toggleFullScreen:
+        mock_call.assert_any_call(12345, "toggleFullScreen:", None)
+
+    # Mock return of styleMask to simulate BEING in fullscreen (so it toggles OFF)
+    with patch(
+        "pytron.platforms.darwin_ops.window.call", return_value=(1 << 14)
+    ) as mock_call:
+        window.set_fullscreen("dummy_w", False)
+        # Should call toggleFullScreen:
+        mock_call.assert_any_call(12345, "toggleFullScreen:", None)

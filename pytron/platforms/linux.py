@@ -46,6 +46,12 @@ class LinuxImplementation(PlatformInterface):
     def show(self, w):
         window.show(w)
 
+    def set_fullscreen(self, w, fullscreen):
+        window.set_fullscreen(w, fullscreen)
+
+    def set_always_on_top(self, w, enable):
+        window.set_always_on_top(w, enable)
+
     def notification(self, w, title, message, icon=None):
         system.notification(w, title, message, icon)
 

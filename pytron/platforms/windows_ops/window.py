@@ -131,9 +131,78 @@ if user32:
     user32.DrawMenuBar.argtypes = [ctypes.wintypes.HWND]
     user32.DrawMenuBar.restype = ctypes.wintypes.BOOL
 
+    # MonitorFromWindow
+    user32.MonitorFromWindow.argtypes = [ctypes.wintypes.HWND, ctypes.c_uint]
+    user32.MonitorFromWindow.restype = ctypes.c_void_p
+
+    # GetMonitorInfoW
+    class MONITORINFO(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", ctypes.c_uint),
+            ("rcMonitor", ctypes.wintypes.RECT),
+            ("rcWork", ctypes.wintypes.RECT),
+            ("dwFlags", ctypes.c_uint),
+        ]
+
+    user32.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(MONITORINFO)]
+    user32.GetMonitorInfoW.restype = ctypes.wintypes.BOOL
+
 # -------------------------------------------------------------------
 # Operations
 # -------------------------------------------------------------------
+
+_fullscreen_storage = {}
+
+
+def set_fullscreen(w, enable):
+    hwnd = get_hwnd(w)
+    if not hwnd:
+        return
+
+    if enable:
+        if hwnd in _fullscreen_storage:
+            return
+
+        # Save current state
+        rect = ctypes.wintypes.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(rect))
+        style = user32.GetWindowLongW(hwnd, GWL_STYLE)
+
+        _fullscreen_storage[hwnd] = {"style": style, "rect": rect}
+
+        # Remove borders
+        # We also remove WS_MAXIMIZEBOX | WS_MINIMIZEBOX to prevent users from breaking it
+        new_style = style & ~(WS_CAPTION | WS_THICKFRAME)
+        user32.SetWindowLongW(hwnd, GWL_STYLE, new_style)
+
+        # Get Monitor Info
+        MONITOR_DEFAULTTOPRIMARY = 1
+        monitor = user32.MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY)
+        monitor_info = MONITORINFO()
+        monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
+        user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info))
+
+        rc = monitor_info.rcMonitor
+        width = rc.right - rc.left
+        height = rc.bottom - rc.top
+
+        # SWP_FRAMECHANGED = 0x0020
+        user32.SetWindowPos(
+            hwnd, 0, rc.left, rc.top, width, height, SWP_NOZORDER | 0x0020
+        )
+    else:
+        if hwnd not in _fullscreen_storage:
+            return
+
+        saved = _fullscreen_storage.pop(hwnd)
+        user32.SetWindowLongW(hwnd, GWL_STYLE, saved["style"])
+        r = saved["rect"]
+        width = r.right - r.left
+        height = r.bottom - r.top
+
+        user32.SetWindowPos(
+            hwnd, 0, r.left, r.top, width, height, SWP_NOZORDER | 0x0020
+        )
 
 
 def minimize(w):
@@ -176,6 +245,20 @@ def toggle_maximize(w):
     else:
         user32.ShowWindow(hwnd, SW_MAXIMIZE)
         return True
+
+
+def set_always_on_top(w, enable):
+    hwnd = get_hwnd(w)
+    if not hwnd:
+        return
+
+    HWND_TOPMOST = -1
+    HWND_NOTOPMOST = -2
+
+    hwnd_insert_after = HWND_TOPMOST if enable else HWND_NOTOPMOST
+    user32.SetWindowPos(
+        hwnd, hwnd_insert_after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+    )
 
 
 def make_frameless(w):

@@ -57,6 +57,12 @@ class WindowsImplementation(PlatformInterface):
     def message_box(self, w, title, message, style=0):
         return system.message_box(w, title, message, style)
 
+    def set_fullscreen(self, w, fullscreen):
+        window.set_fullscreen(w, fullscreen)
+
+    def set_always_on_top(self, w, enable):
+        window.set_always_on_top(w, enable)
+
     def hide(self, w):
         window.hide(w)
 

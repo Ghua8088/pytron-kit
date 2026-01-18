@@ -401,6 +401,22 @@ class Webview:
         if self.frameless:
             self.make_frameless()
 
+        if config.get("fullscreen", False):
+            self.set_fullscreen(True)
+
+        if config.get("always_on_top", False):
+            self.set_always_on_top(True)
+
+        if config.get("start_hidden", False):
+            self.hide()
+
+        if config.get("start_minimized", False):
+            self.minimize()
+
+        # If start_maximized was requested, handled by engine mostly, but we can try
+        if config.get("start_maximized", False):
+            self.toggle_maximize()
+
         if config.get("debug", False):
             self.logger.debug(
                 f"Debug mode active. Native webview_debug available: {hasattr(lib, 'webview_debug')}"
@@ -433,6 +449,12 @@ class Webview:
 
     def toggle_maximize(self):
         return self._platform.toggle_maximize(self.w)
+
+    def set_always_on_top(self, enable):
+        self._platform.set_always_on_top(self.w, enable)
+
+    def set_fullscreen(self, enable):
+        self._platform.set_fullscreen(self.w, enable)
 
     def open_devtools(self):
         """Opens the native developer tools window if supported."""

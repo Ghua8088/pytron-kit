@@ -347,6 +347,13 @@ async function createWindow(options = {}) {
         config.backgroundColor = options.background_color;
     }
 
+    // Transparent
+    if (options.transparent) {
+        config.transparent = true;
+        // Transparency usually requires frameless to look right, but we 'll let the user decide frameless separately
+        // However, on Windows, transparency + frame can be buggy.
+    }
+
     // Pruned: Remove Frame by default if requested or generally if emulating a raw view
     // Ensure we respect the user's explicit config from Python
     if (options.frameless) {
@@ -392,13 +399,19 @@ async function createWindow(options = {}) {
     if (config.url) mainWindow.loadURL(config.url);
 
     mainWindow.once('ready-to-show', () => {
-        log("Event: ready-to-show. Forcing window show.");
+        log("Event: ready-to-show. Processing start state.");
         applyInitScripts();
         sendToPython('lifecycle', 'ready');
 
-        // if (options.start_hidden) {
-        //     return;
-        // }
+        if (options.start_hidden) {
+            log("Starting Hidden");
+            return;
+        }
+
+        if (options.start_minimized) {
+            mainWindow.minimize();
+            return;
+        }
 
         if (options.start_maximized) {
             mainWindow.maximize();
