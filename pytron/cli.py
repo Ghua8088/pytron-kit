@@ -9,8 +9,6 @@ for frontend folders.
 from __future__ import annotations
 
 import argparse
-import sys
-import re
 from .commands.init import cmd_init
 from .commands.run import cmd_run
 from .commands.package import cmd_package
@@ -26,7 +24,7 @@ from .commands.android import cmd_android
 from .commands.engine import cmd_engine
 from .commands.doctor import cmd_doctor
 from .commands.workflow import cmd_workflow
-from .console import log, set_log_file
+from .console import log
 
 
 def build_parser() -> argparse.ArgumentParser:

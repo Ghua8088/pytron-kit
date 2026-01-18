@@ -4,11 +4,9 @@ import json
 import logging
 import threading
 import subprocess
-import time
-import uuid
-import platform
 import struct
 import tempfile
+
 
 logger = logging.getLogger("Pytron.ChromeIPC")
 
@@ -28,7 +26,7 @@ class ChromeIPCServer:
     def listen(self):
         if platform.system() == "Windows":
             import ctypes
-            from ctypes import windll, wintypes
+            from ctypes import windll
 
             # Constants
             PIPE_ACCESS_DUPLEX = 0x00000003
@@ -77,8 +75,6 @@ class ChromeIPCServer:
 
     def read_loop(self, callback):
         """Reads length-prefixed messages."""
-        import ctypes
-        from ctypes import windll, byref, c_ulong, create_string_buffer
 
         while self.connected:
             try:
@@ -105,7 +101,6 @@ class ChromeIPCServer:
         self.connected = False
 
     def _raw_read(self, n):
-        import ctypes
         from ctypes import windll, byref, c_ulong, create_string_buffer
 
         if platform.system() == "Windows":
@@ -128,7 +123,6 @@ class ChromeIPCServer:
             full_msg = header + body
 
             if platform.system() == "Windows":
-                import ctypes
                 from ctypes import windll, byref, c_ulong
 
                 bytes_written = c_ulong(0)

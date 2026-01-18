@@ -1,5 +1,4 @@
 import argparse
-import subprocess
 from pathlib import Path
 from .helpers import get_venv_python_path
 from ..console import log, run_command_with_output

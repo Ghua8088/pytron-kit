@@ -65,6 +65,19 @@ graph TD
 - **Platform Interface Expanded**: Platform backends now provide richer capabilities (notifications, dialogs, icon/app-id management, tray/daemon helpers).
 - **Chrome/Electron Engine**: A production-grade alternative to the default webview. Uses Electron (Mojo Engine) for enhanced stability, modern DevTools, and pixel-perfect rendering, while maintaining full support for Pytron's native features (taskbar, menus, frameless).
 
+## Polyglot Stack
+
+Pytron is a polyglot framework that leverages the best tools for each layer:
+
+*   **Python**: The core of the framework (90%+). Handles the CLI, window management, and business logic.
+*   **JavaScript / TypeScript**: Powers the frontend bridge (`pytron-client`), UI components (`pytron-ui`), and template scaffolding.
+*   **Rust**: Provides the high-security "Agentic Shield" bootloader and payload encryption layer.
+*   **C / C++**: Low-level OS integration (Win32, GTK, Cocoa), Android JNI bridge, and Nuitka-compiled machine code.
+*   **Kotlin / Java**: Android-specific lifecycle management and native platform hooks.
+*   **Zig**: Used as a high-performance toolchain for cross-compiling native components.
+*   **HTML / CSS**: The backbone of all user interfaces and frontend layouts.
+*   **Shell / PowerShell**: Orchestrates multi-platform automation, environment initialization, and CI/CD workflows.
+
 ## Prerequisites
 
 - **Python 3.7+**

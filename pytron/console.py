@@ -9,7 +9,6 @@ from rich.rule import Rule
 from rich.console import Console
 from rich.theme import Theme
 import subprocess
-import sys
 import os
 import datetime
 

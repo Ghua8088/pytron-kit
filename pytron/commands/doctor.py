@@ -5,7 +5,7 @@ import subprocess
 import platform
 import argparse
 from pathlib import Path
-from ..console import log, console, print_rule, Rule
+from ..console import console, print_rule
 
 
 def check_command(cmd, version_args=["--version", "-v", "version"]):
@@ -105,7 +105,6 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     else:
         # Check if installed but not in PATH
         try:
-            import PyInstaller
             from importlib.metadata import version as get_pkg_version
 
             console.print(

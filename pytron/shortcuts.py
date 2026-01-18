@@ -2,7 +2,7 @@ import sys
 import ctypes
 import threading
 import logging
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict
 import ctypes.wintypes
 import queue
 
@@ -127,19 +127,7 @@ class ShortcutManager:
     def _start_darwin_loop(self):
         try:
             from Quartz import (
-                CGEventTapCreate,
-                kCGSessionEventTap,
-                kCGHeadInsertEventTap,
                 kCGEventKeyDown,
-                kCGEventMaskForAllEvents,
-                CGEventTapEnable,
-                CFRunLoopAddSource,
-                CFRunLoopGetCurrent,
-                kCFRunLoopCommonModes,
-                CFRunLoopRun,
-                CGEventGetFlags,
-                CGEventGetIntegerValueField,
-                kCGKeyboardEventKeycode,
             )
 
             self._running = True
@@ -148,8 +136,8 @@ class ShortcutManager:
                 if type != kCGEventKeyDown:
                     return event
 
-                flags = CGEventGetFlags(event)
-                keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+                # flags = CGEventGetFlags(event)
+                # keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
 
                 for sid, data in self.shortcuts.items():
                     # Check if key and modifiers match

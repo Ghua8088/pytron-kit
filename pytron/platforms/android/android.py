@@ -1,6 +1,5 @@
 import json
 import logging
-import sys
 from ..interface import PlatformInterface
 
 # _pytron_android is expected to be a built-in module provided by the C++ JNI layer.

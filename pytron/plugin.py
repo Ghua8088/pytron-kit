@@ -8,7 +8,7 @@ import subprocess
 import threading
 import traceback
 import shutil
-from typing import List, Dict, Any, Union
+from typing import Dict, Any,List
 
 
 class PluginError(Exception):

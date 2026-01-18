@@ -1,5 +1,4 @@
 import os
-import sys
 import zipfile
 import shutil
 import requests

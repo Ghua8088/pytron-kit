@@ -1,4 +1,3 @@
-import sys
 import ctypes
 from typing import List, Optional, Callable
 

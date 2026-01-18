@@ -1,8 +1,6 @@
-import sys
 import time
 import os
 import threading
-import signal
 import logging
 
 

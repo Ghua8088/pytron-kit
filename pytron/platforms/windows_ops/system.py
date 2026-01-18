@@ -347,8 +347,8 @@ def _init_taskbar():
             if hasattr(ctypes, "windll"):
                 ctypes.windll.ole32.CoInitialize(0)
         except Exception as e:
-            # Just ignore, CoInit might fail if already inited
-            pass
+            print(f"[Pytron] Debug: Failed to initialize COM: {e}")
+            return None
 
         CLSID_TaskbarList = "{56FDF344-FD6D-11d0-958A-006097C9A090}"
         import comtypes.client

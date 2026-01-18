@@ -4,8 +4,6 @@ import shutil
 import subprocess
 import json
 import os
-import re
-
 from pathlib import Path
 from ..console import log, console
 from rich.text import Text

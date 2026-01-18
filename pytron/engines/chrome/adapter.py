@@ -4,13 +4,11 @@ import json
 import logging
 import threading
 import socket
-import time
 import uuid
-import platform
 import struct
 import subprocess
 import tempfile
-import ctypes  # Added for Windows Named Pipes
+import ctypes
 
 logger = logging.getLogger("Pytron.ChromeAdapter")
 

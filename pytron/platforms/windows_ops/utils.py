@@ -1,4 +1,3 @@
-import ctypes
 from ...bindings import lib
 
 

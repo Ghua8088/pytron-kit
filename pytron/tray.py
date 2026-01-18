@@ -3,7 +3,7 @@ import sys
 import ctypes
 import threading
 import logging
-from typing import Callable, List, Dict, Optional
+from typing import Callable, List, Optional
 from .utils import get_resource_path
 
 # Platform-specific imports
@@ -114,7 +114,6 @@ class SystemTray:
                 NSMenuItem,
                 NSImage,
             )
-            from PyObjCTools import AppHelper
 
             self._status_item = NSStatusBar.systemStatusBar().statusItemWithLength_(
                 NSVariableStatusItemLength

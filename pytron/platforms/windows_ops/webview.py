@@ -1,5 +1,3 @@
-import ctypes
-
 
 def register_pytron_scheme(w, callback):
     """

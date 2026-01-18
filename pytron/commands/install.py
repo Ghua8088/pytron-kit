@@ -1,5 +1,4 @@
 import argparse
-import sys
 import subprocess
 import venv
 import json
@@ -7,10 +6,7 @@ import re
 from pathlib import Path
 from ..console import (
     log,
-    console,
     get_progress,
-    print_rule,
-    Rule,
     run_command_with_output,
 )
 import shutil

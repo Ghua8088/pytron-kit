@@ -5,9 +5,7 @@ import subprocess
 import shutil
 import tempfile
 import urllib.request
-import zipfile
 import ctypes
-from pathlib import Path
 
 # Optional LIEF import
 try:
@@ -280,9 +278,10 @@ class AndroidBuilder:
             if not url.startswith("https://"):
                 raise ValueError("URL must be HTTPS")
 
+            # nosemgrep
             with urllib.request.urlopen(
                 url
-            ) as response, open(  # nosec B310 # nosemgrep
+            ) as response, open(  # nosec B310
                 zip_path, "wb"
             ) as out:
                 shutil.copyfileobj(response, out)
@@ -332,7 +331,8 @@ class AndroidBuilder:
                     if not url.startswith("https://"):
                         raise ValueError("URL must be HTTPS")
 
-                    urllib.request.urlretrieve(url, dest)  # nosec B310 # nosemgrep
+                    # nosemgrep
+                    urllib.request.urlretrieve(url, dest)  # nosec B310
                 except Exception as e:
                     print(f"[AndroidBuilder] Warning: Failed to download {name}: {e}")
 
@@ -368,7 +368,8 @@ class AndroidBuilder:
                 if not url.startswith("https://"):
                     raise ValueError("URL must be HTTPS")
                 print(f"[AndroidBuilder] Downloading {url}...")
-                urllib.request.urlretrieve(url, zip_path)  # nosec B310 # nosemgrep
+                # nosemgrep
+                urllib.request.urlretrieve(url, zip_path)  # nosec B310
 
             import zipfile
 

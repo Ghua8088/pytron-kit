@@ -98,3 +98,15 @@ sys.modules["plugins"] = plugins
 from .core import App, Webview, get_resource_path, Menu, MenuBar
 from .plugin import Plugin
 from .updater import Updater
+
+__all__ = [
+    "App",
+    "Webview",
+    "get_resource_path",
+    "Menu",
+    "MenuBar",
+    "Plugin",
+    "Updater",
+    "plugins",
+    "PluginConfigurator",
+]

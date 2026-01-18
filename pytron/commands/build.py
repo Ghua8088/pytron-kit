@@ -3,7 +3,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from .helpers import get_config
-import sys
+
 
 
 def cmd_build_frontend(args: argparse.Namespace) -> int:

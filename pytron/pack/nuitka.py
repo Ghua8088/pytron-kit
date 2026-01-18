@@ -141,11 +141,6 @@ def run_nuitka_build(
                 if dst == ".":
                     dst = os.path.basename(src)
                 cmd.append(f"--include-data-file={src}={dst}")
-
-    # Engine Plugins
-    requested_engine = getattr(args, "engine", None)
-    # PySide6 plugin enablement removed.
-
     # Add extra plugin args from package_context
     if extra_plugin_args:
         cmd.extend(extra_plugin_args)

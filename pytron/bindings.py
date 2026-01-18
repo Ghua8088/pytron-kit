@@ -50,9 +50,6 @@ if IS_ANDROID:
             # If msg is already the JSON string from JS invoke(s)
 
             # print(f"DEBUG: dispatch_android_message raw: {msg}")
-
-            payload = data
-
             seq = data.get("id")
             name = data.get("method")
             params = data.get("params")

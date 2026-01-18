@@ -53,13 +53,10 @@ def _set_utf8_mode():
 
             # Check return values (Non-zero is success)
             if kernel32.SetConsoleOutputCP(65001) == 0:
-                err = ctypes.get_last_error()
-                # We don't want to crash on this, but we acknowledge the failure
                 # logging.warning(f"Failed to SetConsoleOutputCP: {err}")
                 pass
 
             if kernel32.SetConsoleCP(65001) == 0:
-                err = ctypes.get_last_error()
                 pass
 
         except Exception:

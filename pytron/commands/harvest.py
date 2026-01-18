@@ -1,4 +1,3 @@
-import os
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Iterable

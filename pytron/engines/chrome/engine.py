@@ -2,11 +2,8 @@ import os
 import sys
 import json
 import logging
-import time
 import ctypes
-import pathlib
 import platform
-import threading
 import subprocess
 from ...webview import Webview
 from .adapter import ChromeAdapter

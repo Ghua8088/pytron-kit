@@ -1,8 +1,5 @@
 ﻿import argparse
-import subprocess
-import sys
 import shutil
-import os
 import json
 from pathlib import Path
 from ..console import (
@@ -10,7 +7,6 @@ from ..console import (
     console,
     get_progress,
     print_rule,
-    Rule,
     run_command_with_output,
 )
 from .. import __version__
