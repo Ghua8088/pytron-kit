@@ -607,8 +607,8 @@ coll = COLLECT(
 
         try:
             shutil.rmtree(build_dir)
-        except:
-            pass
+        except Exception as e:
+            log(f"Debug: Failed to cleanup build dir: {e}", style="dim")
 
         progress.update(task, description="Shield: Complete!", completed=100)
         progress.stop()

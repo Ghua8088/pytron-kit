@@ -294,8 +294,8 @@ def build_linux_installer(out_name: str, script_dir: Path, app_icon: str | None)
             version = settings.get("version", "1.0")
             author = settings.get("author", author)
             description = settings.get("description", description)
-    except Exception:
-        pass
+    except Exception as e:
+        log(f"Debug: Failed to load settings.json for linux build: {e}", style="dim")
 
     # Clean version for Debian (digits, dots, plus, tilde)
     deb_version = "".join(c for c in version if c.isalnum() or c in ".-+~")
