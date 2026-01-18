@@ -1,4 +1,3 @@
-import pytest
 import threading
 from unittest.mock import MagicMock
 from pytron.state import ReactiveState
@@ -59,10 +58,6 @@ def test_state_bulk_update():
     calls = win1.emit.call_args_list
     assert len(calls) == 2
     # Order isn't guaranteed by dict iteration usually, but let's check content
-    args_list = [c[0] for c in calls]  # [("pytron:state-update", {...}), ...]
-    payloads = [
-        c[1] for c in calls if len(c) > 1
-    ]  # kwargs? No, assert_called_with uses positional if called that way
 
     # Just check that both keys were emitted
     keys_emitted = set()

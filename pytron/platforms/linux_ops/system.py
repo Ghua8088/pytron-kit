@@ -222,8 +222,6 @@ def enable_drag_drop(w, callback):
         return
 
     # We need dragging constants
-    GTK_DEST_DEFAULT_ALL = 7
-    GDK_ACTION_COPY = 1
 
     # Define Target Entry
     # drag_dest_set expects an array of GtkTargetEntry

@@ -25,7 +25,7 @@ def notify_me():
 @app.expose
 def setup_tray():
     """Initializes the system tray with a menu."""
-    tray = app.setup_tray_standard()  # Creates a tray with basic 'Show/Hide/Exit'
+    app.setup_tray_standard()  # Creates a tray with basic 'Show/Hide/Exit'
 
     # You can also manually add items (advanced)
     # app.tray.add_item("Custom Action", lambda: print("Action clicked"))
