@@ -49,14 +49,14 @@ def set_log_file(path: str | None):
 
 
 def log(
-    msg: str, style: str = "info", title: str = "Pytron", markup: bool = True
+    msg: str, style: str = "info", title: str = "Pytron", markup: bool = False
 ) -> None:
     """Helper to print [Pytron] messages with style and log to file."""
     # Print to console
     try:
         # The title part is always markup (bold)
         console.print(f"[bold][{title}][/bold] ", style=style, end="")
-        # The message part can optionally contain Rich markup (e.g. [bold green]...)
+        # The message part defaults to plain text for safety (e.g. paths with [])
         console.print(msg, style=style, markup=markup)
     except Exception:
         # Fallback to plain print if the style or markup is invalid

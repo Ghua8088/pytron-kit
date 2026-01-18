@@ -2,7 +2,7 @@ import subprocess
 import os
 import ctypes
 from . import libs
-from .utils import get_class, str_to_nsstring
+from .utils import get_class, str_to_nsstring, msg_send, call
 
 
 def message_box(w, title, message, style=0):
@@ -77,15 +77,10 @@ def set_app_id(app_id):
         return
     try:
         cls_proc = get_class("NSProcessInfo")
-        sel_info = libs.objc.sel_registerName("processInfo".encode("utf-8"))
-        proc_info = libs.objc.objc_msgSend(cls_proc, sel_info)
-        sel_set_name = libs.objc.sel_registerName("setProcessName:".encode("utf-8"))
+        proc_info = msg_send(cls_proc, "processInfo")
 
         name_str = str_to_nsstring(app_id)
-        f_set = ctypes.CFUNCTYPE(
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p
-        )(libs.objc.objc_msgSend)
-        f_set(proc_info, sel_set_name, name_str)
+        msg_send(proc_info, "setProcessName:", name_str)
     except Exception:
         pass
 
@@ -138,19 +133,8 @@ def set_taskbar_progress(w, state="normal", value=0, max_value=100):
         return
     try:
         cls_app = get_class("NSApplication")
-        sel_shared = libs.objc.sel_registerName("sharedApplication".encode("utf-8"))
-        ns_app = libs.objc.objc_msgSend(cls_app, sel_shared)
-
-        sel_dock = libs.objc.sel_registerName("dockTile".encode("utf-8"))
-        f_dock = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(
-            libs.objc.objc_msgSend
-        )
-        dock_tile = f_dock(ns_app, sel_dock)
-
-        sel_set_badge = libs.objc.sel_registerName("setBadgeLabel:".encode("utf-8"))
-        f_set = ctypes.CFUNCTYPE(
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p
-        )(libs.objc.objc_msgSend)
+        ns_app = msg_send(cls_app, "sharedApplication")
+        dock_tile = msg_send(ns_app, "dockTile")
 
         badge_text = None
         if state in ("normal", "error", "paused") and max_value > 0:
@@ -159,10 +143,8 @@ def set_taskbar_progress(w, state="normal", value=0, max_value=100):
         elif state == "indeterminate":
             badge_text = str_to_nsstring("...")
 
-        f_set(dock_tile, sel_set_badge, badge_text)
-
-        sel_display = libs.objc.sel_registerName("display".encode("utf-8"))
-        libs.objc.objc_msgSend(dock_tile, sel_display)
+        msg_send(dock_tile, "setBadgeLabel:", badge_text)
+        msg_send(dock_tile, "display")
 
     except Exception:
         pass

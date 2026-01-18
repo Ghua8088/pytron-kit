@@ -6,6 +6,7 @@ import importlib.metadata
 import json
 import subprocess
 from pathlib import Path
+from rich.markup import escape
 from ....console import log, console
 from ....commands.helpers import get_config
 from ..builder import AndroidBuilder
@@ -88,7 +89,7 @@ def sync_android_project(project_root: str, native: bool = False) -> None:
 
     if frontend_src:
         console.print(
-            f"  [Frontend] Found at {os.path.relpath(frontend_src, project_root)}",
+            f"  [Frontend] Found at {escape(os.path.relpath(frontend_src, project_root))}",
             style="dim",
         )
         console.print(f"  [Frontend] Copying to assets/www...", style="dim")
@@ -179,7 +180,7 @@ def sync_android_project(project_root: str, native: bool = False) -> None:
 
         if source_sp:
             console.print(
-                f"  [Deps]     Copying dependencies from {os.path.relpath(source_sp, project_root)}...",
+                f"  [Deps]     Copying dependencies from {escape(os.path.relpath(source_sp, project_root))}...",
                 style="dim",
             )
             # Copy everything except pip, setuptools, wheel, pkg_resources, __pycache__
@@ -266,7 +267,7 @@ def sync_android_project(project_root: str, native: bool = False) -> None:
     if local_pytron_source and os.path.exists(local_pytron_source) and is_dev:
         pytron_pkg_dir = local_pytron_source
         console.print(
-            f"  [Vendor]   Development Mode: Copying pytron library from LOCAL source: {pytron_pkg_dir}",
+            f"  [Vendor]   Development Mode: Copying pytron library from LOCAL source: {escape(str(pytron_pkg_dir))}",
             style="bold blue",
         )
     else:
@@ -275,7 +276,7 @@ def sync_android_project(project_root: str, native: bool = False) -> None:
 
         pytron_pkg_dir = os.path.dirname(pytron.__file__)
         console.print(
-            f"  [Vendor]   Copying pytron library from INSTALLED package: {pytron_pkg_dir}",
+            f"  [Vendor]   Copying pytron library from INSTALLED package: {escape(str(pytron_pkg_dir))}",
             style="dim",
         )
 
@@ -378,7 +379,7 @@ def sync_android_project(project_root: str, native: bool = False) -> None:
     for lib_dynload in search_paths:
         if os.path.exists(lib_dynload):
             console.print(
-                f"  [Fixes]    Scanning for .so files in {os.path.basename(lib_dynload)}...",
+                f"  [Fixes]    Scanning for .so files in {escape(os.path.basename(lib_dynload))}...",
                 style="dim",
             )
             count = 0
@@ -609,7 +610,7 @@ def sync_android_project(project_root: str, native: bool = False) -> None:
         if os.path.exists(local_lib_path):
             shutil.copy2(local_lib_path, libpy_dst)
             console.print(
-                f"  [Native]   Copied libpython3.14.so from local workspace: {local_lib_path}",
+                f"  [Native]   Copied libpython3.14.so from local workspace: {escape(str(local_lib_path))}",
                 style="success",
             )
         else:
@@ -642,7 +643,7 @@ def sync_android_project(project_root: str, native: bool = False) -> None:
             if os.path.exists(ffi):
                 shutil.copy2(ffi, libffi_dst)
                 console.print(
-                    f"  [Native]   Copied libffi.so from local workspace: {ffi}",
+                    f"  [Native]   Copied libffi.so from local workspace: {escape(str(ffi))}",
                     style="success",
                 )
                 break
@@ -727,7 +728,7 @@ def sync_android_project(project_root: str, native: bool = False) -> None:
             app_icon_src = os.path.join(project_root, app_icon_rel)
             if os.path.exists(app_icon_src):
                 console.print(
-                    f"             Updating App Icon: {app_icon_rel}", style="dim"
+                    f"             Updating App Icon: {escape(str(app_icon_rel))}", style="dim"
                 )
                 # Android template currently uses mipmap-xxhdpi
                 mipmap_dir = os.path.join(
@@ -742,7 +743,7 @@ def sync_android_project(project_root: str, native: bool = False) -> None:
                 )
             else:
                 console.print(
-                    f"             Warning: Icon file not found at {app_icon_src}",
+                    f"             Warning: Icon file not found at {escape(str(app_icon_src))}",
                     style="warning",
                 )
 

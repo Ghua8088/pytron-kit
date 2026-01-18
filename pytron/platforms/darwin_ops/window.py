@@ -1,6 +1,6 @@
 import ctypes
 from . import libs
-from .utils import get_window, call, get_class, str_to_nsstring
+from .utils import get_window, call, get_class, str_to_nsstring, msg_send
 
 
 def minimize(w):
@@ -25,8 +25,6 @@ def toggle_maximize(w):
 
 def make_frameless(w):
     win = get_window(w)
-    # setStyleMask: 8 (Resizable) | 0 (Borderless) -> But we usually want Titled | FullSizeContentView
-    # To mimic standardized frameless:
     # NSWindowStyleMaskTitled = 1 << 0
     # NSWindowStyleMaskClosable = 1 << 1
     # NSWindowStyleMaskMiniaturizable = 1 << 2
@@ -59,16 +57,8 @@ def show(w):
     call(win, "makeKeyAndOrderFront:", None)
     try:
         cls_app = get_class("NSApplication")
-        sel_shared = libs.objc.sel_registerName("sharedApplication".encode("utf-8"))
-        ns_app = libs.objc.objc_msgSend(cls_app, sel_shared)
-
-        sel_activate = libs.objc.sel_registerName(
-            "activateIgnoringOtherApps:".encode("utf-8")
-        )
-        f_act = ctypes.CFUNCTYPE(
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool
-        )(libs.objc.objc_msgSend)
-        f_act(ns_app, sel_activate, True)
+        ns_app = msg_send(cls_app, "sharedApplication")
+        msg_send(ns_app, "activateIgnoringOtherApps:", True)
     except Exception:
         pass
 
@@ -78,30 +68,14 @@ def set_window_icon(w, icon_path):
         return
     try:
         cls_image = get_class("NSImage")
-        sel_alloc = libs.objc.sel_registerName("alloc".encode("utf-8"))
-        sel_init_file = libs.objc.sel_registerName(
-            "initWithContentsOfFile:".encode("utf-8")
-        )
-
-        img_alloc = libs.objc.objc_msgSend(cls_image, sel_alloc)
+        img_alloc = msg_send(cls_image, "alloc")
         ns_path = str_to_nsstring(icon_path)
-        f_init = ctypes.CFUNCTYPE(
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p
-        )(libs.objc.objc_msgSend)
-        ns_image = f_init(img_alloc, sel_init_file, ns_path)
+        ns_image = msg_send(img_alloc, "initWithContentsOfFile:", ns_path)
 
         if ns_image:
             cls_app = get_class("NSApplication")
-            sel_shared = libs.objc.sel_registerName("sharedApplication".encode("utf-8"))
-            ns_app = libs.objc.objc_msgSend(cls_app, sel_shared)
-
-            sel_set_icon = libs.objc.sel_registerName(
-                "setApplicationIconImage:".encode("utf-8")
-            )
-            f_set = ctypes.CFUNCTYPE(
-                ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p
-            )(libs.objc.objc_msgSend)
-            f_set(ns_app, sel_set_icon, ns_image)
+            ns_app = msg_send(cls_app, "sharedApplication")
+            msg_send(ns_app, "setApplicationIconImage:", ns_image)
     except Exception:
         pass
 
@@ -121,12 +95,6 @@ def set_always_on_top(w, enable):
 def set_fullscreen(w, enable):
     win = get_window(w)
     # Check current style mask for NSWindowStyleMaskFullScreen (1 << 14)
-    # objc_msgSend returns a pointer (long/int), need to cast correctly if needed
-    # but 'call' wrapper currently might discard return?
-    # Let's assume we can get the mask.
-    # Actually, toggleFullScreen: is the safest standard way, but we need to know state.
-
-    # We can try to use 'styleMask'
     style_mask = call(win, "styleMask")
     is_fullscreen = (style_mask & (1 << 14)) != 0
 
