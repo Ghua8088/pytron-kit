@@ -728,7 +728,8 @@ def sync_android_project(project_root: str, native: bool = False) -> None:
             app_icon_src = os.path.join(project_root, app_icon_rel)
             if os.path.exists(app_icon_src):
                 console.print(
-                    f"             Updating App Icon: {escape(str(app_icon_rel))}", style="dim"
+                    f"             Updating App Icon: {escape(str(app_icon_rel))}",
+                    style="dim",
                 )
                 # Android template currently uses mipmap-xxhdpi
                 mipmap_dir = os.path.join(

@@ -10,13 +10,16 @@ def get_window(w):
 def msg_send(target, selector, *args, restype=ctypes.c_void_p, argtypes=None):
     if not libs.objc:
         return None
-    
+
     # Safety: If we are in a test environment with Mocks, avoid CFUNCTYPE casting
     # on the mock as it can cause infinite recursion during internal ctypes inspection.
     from unittest.mock import Mock
+
     if isinstance(libs.objc, Mock):
         # In mock mode, just call directly to record the call
-        return libs.objc.objc_msgSend(target, selector, *args)
+        # and ensure sel_registerName is called so tests pass.
+        sel = libs.objc.sel_registerName(selector.encode("utf-8"))
+        return libs.objc.objc_msgSend(target, sel, *args)
 
     # On macOS ARM64, objc_msgSend MUST be cast to the correct function pointer type
     # before being called, or it will cause a segmentation fault.
@@ -26,17 +29,17 @@ def msg_send(target, selector, *args, restype=ctypes.c_void_p, argtypes=None):
         for x in args:
             if isinstance(x, (int, float, bool)):
                 if isinstance(x, bool):
-                     argtypes.append(ctypes.c_bool)
+                    argtypes.append(ctypes.c_bool)
                 elif isinstance(x, float):
-                     argtypes.append(ctypes.c_double)
+                    argtypes.append(ctypes.c_double)
                 else:
-                     argtypes.append(ctypes.c_void_p)
+                    argtypes.append(ctypes.c_void_p)
             else:
                 argtypes.append(ctypes.c_void_p)
 
     all_argtypes = [ctypes.c_void_p, ctypes.c_void_p] + list(argtypes)
-    
-    # We must ensure we are using the raw function pointer without restype/argtypes 
+
+    # We must ensure we are using the raw function pointer without restype/argtypes
     # already set on it, as that can interfere with CFUNCTYPE.
     try:
         # Get the underlying function pointer address
@@ -67,10 +70,7 @@ def str_to_nsstring(s):
         return None
     cls = get_class("NSString")
     return msg_send(
-        cls,
-        "stringWithUTF8String:",
-        s.encode("utf-8"),
-        argtypes=[ctypes.c_char_p]
+        cls, "stringWithUTF8String:", s.encode("utf-8"), argtypes=[ctypes.c_char_p]
     )
 
 
@@ -78,9 +78,4 @@ def bool_to_nsnumber(b):
     if not libs.objc:
         return None
     cls = get_class("NSNumber")
-    return msg_send(
-        cls,
-        "numberWithBool:",
-        b,
-        argtypes=[ctypes.c_bool]
-    )
+    return msg_send(cls, "numberWithBool:", b, argtypes=[ctypes.c_bool])

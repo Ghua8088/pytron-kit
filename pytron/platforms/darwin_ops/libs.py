@@ -20,7 +20,7 @@ def load_libs():
         objc.sel_registerName.restype = ctypes.c_void_p
         objc.sel_registerName.argtypes = [ctypes.c_char_p]
 
-        # Do NOT set restype/argtypes for objc_msgSend here. 
+        # Do NOT set restype/argtypes for objc_msgSend here.
         # It MUST be cast to the correct signature for every call on ARM64.
 
     except Exception as e:
