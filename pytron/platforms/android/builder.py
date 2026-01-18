@@ -279,9 +279,7 @@ class AndroidBuilder:
                 raise ValueError("URL must be HTTPS")
 
             # nosemgrep
-            with urllib.request.urlopen(
-                url
-            ) as response, open(  # nosec B310
+            with urllib.request.urlopen(url) as response, open(  # nosec B310
                 zip_path, "wb"
             ) as out:
                 shutil.copyfileobj(response, out)

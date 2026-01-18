@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import MagicMock, patch, call
 from pathlib import Path
 from pytron.console import console
+
 # Import the modules to test
 from pytron.platforms.android.ops.init import (
     init_android_project,

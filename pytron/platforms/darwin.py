@@ -1,5 +1,5 @@
 from .interface import PlatformInterface
-from .darwin_ops import window, system,libs
+from .darwin_ops import window, system, libs
 
 
 class DarwinImplementation(PlatformInterface):

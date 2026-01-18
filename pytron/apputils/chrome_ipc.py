@@ -7,7 +7,6 @@ import subprocess
 import struct
 import tempfile
 
-
 logger = logging.getLogger("Pytron.ChromeIPC")
 
 

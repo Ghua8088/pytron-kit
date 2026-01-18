@@ -52,9 +52,7 @@ class Updater:
                 raise ValueError("Updater only supports HTTPS")
 
             # nosemgrep
-            with urllib.request.urlopen(
-                url, timeout=5
-            ) as response:  # nosec B310
+            with urllib.request.urlopen(url, timeout=5) as response:  # nosec B310
                 data = json.loads(response.read().decode())
                 remote_version = data.get("version")
 

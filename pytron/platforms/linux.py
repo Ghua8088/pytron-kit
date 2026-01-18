@@ -1,5 +1,5 @@
 from .interface import PlatformInterface
-from .linux_ops import window, system,libs
+from .linux_ops import window, system, libs
 
 
 class LinuxImplementation(PlatformInterface):

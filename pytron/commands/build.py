@@ -5,7 +5,6 @@ from pathlib import Path
 from .helpers import get_config
 
 
-
 def cmd_build_frontend(args: argparse.Namespace) -> int:
     folder = Path(args.folder)
     if not folder.exists():

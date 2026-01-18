@@ -88,6 +88,7 @@ class WindowMixin:
                     # if self._on_file_drop_callback:
                     #     enable_drag_drop_safe(window.w, _drop_wrapper)
                 elif sys.platform == "linux":
+
                     def _drop_wrapper(files):
                         self.thread_pool.submit(
                             self._on_file_drop_callback, window, files
