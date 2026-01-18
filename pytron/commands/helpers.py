@@ -25,8 +25,9 @@ def get_config() -> dict:
     if path.exists():
         try:
             return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except Exception as e:
+            # Config file might be corrupted or unreadable
+            print(f"[Pytron] Debug: Failed to load settings.json: {e}")
     return {}
 
 
@@ -72,6 +73,7 @@ def locate_frontend_dir(start_dir: Path | None = None) -> Path | None:
         try:
             data = json.loads(pkg.read_text())
         except json.JSONDecodeError:
+            # Skip invalid package.json
             continue
         if isinstance(data.get("scripts"), dict) and "build" in data["scripts"]:
             return candidate.resolve()
@@ -99,8 +101,8 @@ def run_frontend_build(frontend_dir: Path) -> bool | None:
             ensure_next_config(frontend_dir)
             patch_nextjs_defaults(frontend_dir)  # Patch default template paths
             is_next = True
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Pytron] Debug: Failed to patch Next.js config: {e}")
 
     try:
         # If this is a Next.js project, prefer npx/bunx/pnpx next build (and export)
@@ -116,7 +118,7 @@ def run_frontend_build(frontend_dir: Path) -> bool | None:
             subprocess.run(
                 [runner, "next", "build"],
                 cwd=str(frontend_dir),
-                shell=(sys.platform == "win32"),
+                shell=False,
                 check=True,
             )
             return True
@@ -125,7 +127,7 @@ def run_frontend_build(frontend_dir: Path) -> bool | None:
         subprocess.run(
             [provider_bin, "run", "build"],
             cwd=str(frontend_dir),
-            shell=(sys.platform == "win32"),
+            shell=False,
             check=True,
         )
         return True
@@ -191,8 +193,8 @@ def patch_nextjs_defaults(frontend_dir: Path):
                     print(
                         f"[Pytron] Patched {layout_file.name} to use relative favicon path."
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[Pytron] Debug: Failed to patch layout file: {e}")
 
 
 def ensure_next_config(frontend_dir: Path) -> bool:
