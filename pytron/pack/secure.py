@@ -10,14 +10,7 @@ from .installers import build_installer
 from ..commands.helpers import get_python_executable, get_venv_site_packages
 from ..commands.harvest import generate_nuclear_hooks
 
-try:
-    import pefile
-except ImportError:
-    pefile = None
-try:
-    from PyInstaller.utils.win32.icon import CopyIcons
-except ImportError:
-    CopyIcons = None
+from .metadata import MetadataEditor
 
 
 # The placeholder that exists in the precompiled binary
@@ -38,204 +31,9 @@ from .utils import cleanup_dist as prune_junk_folders
 import plistlib
 
 
-class MetadataEditor:
-    """Universal Metadata Editor for Pytron binaries."""
 
-    def update(self, binary_path, icon_path, settings, dist_dir):
-        if str(binary_path).endswith(".exe") or sys.platform == "win32":
-            return self._update_windows(binary_path, icon_path, settings)
-        elif sys.platform == "darwin":
-            return self._update_macos(binary_path, icon_path, settings, dist_dir)
-        elif sys.platform == "linux":
-            return self._update_linux(binary_path, icon_path, settings, dist_dir)
-        return binary_path
-
-    def _update_windows(self, binary_path, icon_path, settings):
-        """Windows: Uses Binary Patching for strings (Stability) and LIEF for Icon."""
-        try:
-            # 1. Binary String Patching (The "Gold Standard" for stability)
-            log(f"Hardening Windows binary: {binary_path.name}", style="info")
-
-            patch_map = {
-                "PYTRON_PLACEHOLDER_COMPANY_NAME_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX": settings.get(
-                    "author", "Pytron User"
-                ),
-                "PYTRON_PLACEHOLDER_FILE_DESCRIPTION_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX": settings.get(
-                    "description", "Pytron Secure App"
-                ),
-                "PYTRON_PLACEHOLDER_INTERNAL_NAME_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX": binary_path.stem,
-                "PYTRON_PLACEHOLDER_LEGAL_COPYRIGHT_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX": settings.get(
-                    "copyright", f"Copyright © {settings.get('author', '2026')}"
-                ),
-                "PYTRON_PLACEHOLDER_ORIGINAL_FILENAME_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX": f"{binary_path.stem}.exe",
-                "PYTRON_PLACEHOLDER_PRODUCT_NAME_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX": settings.get(
-                    "title", binary_path.stem
-                ),
-            }
-
-            with open(binary_path, "rb") as f:
-                content = bytearray(f.read())
-
-            patched_count = 0
-            for placeholder, value in patch_map.items():
-                ph_bytes = placeholder.encode("utf-16le")
-                val_bytes = str(value).encode("utf-16le")
-
-                # Truncate if too long (keeping null termination effectively by not writing over the end)
-                if len(val_bytes) > len(ph_bytes):
-                    val_bytes = val_bytes[: len(ph_bytes)]
-
-                # Pad with nulls to match exact placeholder length
-                pad_len = len(ph_bytes) - len(val_bytes)
-                final_bytes = val_bytes + b"\x00" * pad_len
-
-                idx = content.find(ph_bytes)
-                if idx != -1:
-                    content[idx : idx + len(ph_bytes)] = final_bytes
-                    patched_count += 1
-                else:
-                    log(
-                        f"Warning: Placeholder not found in binary: {placeholder[:30]}...",
-                        style="warning",
-                    )
-
-            with open(binary_path, "wb") as f:
-                f.write(content)
-
-            log(
-                f"Binary Metadata Patch Applied ({patched_count} fields)",
-                style="success",
-            )
-
-            # 2. Fix Checksum (pefile)
-            try:
-                pe = pefile.PE(str(binary_path))
-                pe.OPTIONAL_HEADER.CheckSum = pe.generate_checksum()
-                pe.write(str(binary_path))
-                pe.close()
-            except Exception as e:
-                log(f"Checksum fix warning: {e}", style="warning")
-
-            # 3. Inject Icon (PyInstaller Native Method)
-            if icon_path and os.path.exists(icon_path):
-                try:
-                    # Uses Win32 API UpdateResource - strict, safe, and reliable for Windows
-                    # Some versions of PyInstaller require a workpath or have changed signatures
-                    log(
-                        f"Injecting icon: {icon_path} into {binary_path.name}",
-                        style="dim",
-                    )
-                    try:
-                        CopyIcons(str(binary_path), str(icon_path))
-                    except (TypeError, KeyError):
-                        # Fallback for newer PyInstaller signatures (dst, src, workpath)
-                        CopyIcons(str(binary_path), str(icon_path), ".")
-
-                    log(
-                        "Applied app icon via Win32 API (PyInstaller utils).",
-                        style="success",
-                    )
-                except Exception as e:
-                    log(f"Icon injection warning: {e}", style="warning")
-
-        except Exception as e:
-            log(f"Windows Metadata Error: {e}", style="error")
-            log(traceback.format_exc(), style="dim")
-        return binary_path
-
-    def _update_macos(self, binary_path, icon_path, settings, dist_dir):
-        """macOS: Emulates PyInstaller's BUNDLE behavior for Info.plist and bundle structure."""
-        out_name = binary_path.stem
-        app_name = settings.get("title", out_name)
-        app_bundle = dist_dir / f"{app_name}.app"
-        contents_dir = app_bundle / "Contents"
-        macos_dir = contents_dir / "MacOS"
-        resources_dir = contents_dir / "Resources"
-
-        for d in [macos_dir, resources_dir]:
-            d.mkdir(parents=True, exist_ok=True)
-
-        # Move binary into the bundle (Native location)
-        bundled_binary = macos_dir / out_name
-        if binary_path.exists():
-            shutil.move(str(binary_path), str(bundled_binary))
-
-        # Metadata construction
-        version = str(settings.get("version", "1.0.0"))
-        author = settings.get("author", "Pytron User")
-        bundle_id = settings.get(
-            "bundle_id", f"com.{author.replace(' ', '').lower()}.{out_name.lower()}"
-        )
-
-        # Build the Info.plist dictionary (Matches PyInstaller's BUNDLE defaults)
-        copyright_text = settings.get("copyright", f"Copyright © {author}")
-        info_plist = {
-            "CFBundleExecutable": out_name,
-            "CFBundleIconFile": "app.icns",
-            "CFBundleIdentifier": bundle_id,
-            "CFBundleInfoDictionaryVersion": "6.0",
-            "CFBundleName": app_name,
-            "CFBundleDisplayName": app_name,
-            "CFBundlePackageType": "APPL",
-            "CFBundleShortVersionString": version,
-            "CFBundleVersion": version,
-            "LSMinimumSystemVersion": "10.13.0",
-            "NSHighResolutionCapable": True,
-            "NSPrincipalClass": "NSApplication",
-            "NSAppleEventsUsageDescription": "This app requires access to AppleEvents.",
-            "NSHumanReadableCopyright": copyright_text,
-        }
-
-        # User-defined plist additions from settings
-        plist_additions = settings.get("macos_plist", {})
-        if isinstance(plist_additions, dict):
-            info_plist.update(plist_additions)
-
-        # Write using plistlib (The core engine for macOS metadata)
-        plist_path = contents_dir / "Info.plist"
-        with open(plist_path, "wb") as f:
-            plistlib.dump(info_plist, f)
-
-        # Handle Icon (Copy .icns if provided)
-        if icon_path and os.path.exists(icon_path):
-            if str(icon_path).endswith(".icns"):
-                shutil.copy(icon_path, resources_dir / "app.icns")
-            else:
-                log(
-                    "Warning: macOS requires .icns format for bundle icons.",
-                    style="warning",
-                )
-
-        log(f"Assembled macOS Bundle: {app_name}.app", style="success")
-        return bundled_binary
-
-    def _update_linux(self, binary_path, icon_path, settings, dist_dir):
-        """Linux: Creates standard .desktop entry."""
-        out_name = binary_path.stem
-        app_name = settings.get("title", out_name)
-        version = settings.get("version", "1.0.0")
-
-        desktop_content = f"""[Desktop Entry]
-Type=Application
-Version={version}
-Name={app_name}
-Comment={settings.get('description', app_name)}
-Exec=./{out_name}
-Icon=./icon.png
-Terminal=false
-Categories=Utility;
-"""
-        (dist_dir / f"{out_name}.desktop").write_text(desktop_content)
-
-        if icon_path and os.path.exists(icon_path):
-            shutil.copy(icon_path, dist_dir / "icon.png")
-
-        log(f"Generated Linux .desktop entry for {app_name}", style="success")
-        return binary_path
-
-
-def apply_metadata_to_binary(binary_path, icon_path, settings, dist_dir):
-    editor = MetadataEditor()
+def apply_metadata_to_binary(binary_path, icon_path, settings, dist_dir, package_dir=None):
+    editor = MetadataEditor(package_dir=package_dir)
     return editor.update(binary_path, icon_path, settings, dist_dir)
 
 
@@ -574,7 +372,7 @@ coll = COLLECT(
         # Apply Icon and Metadata (Windows / macOS / Linux)
         # MUST happen before sealing the binary, as resource editing shifts offsets!
         final_loader = apply_metadata_to_binary(
-            final_loader, app_icon, settings, final_dist
+            final_loader, app_icon, settings, final_dist, package_dir=package_dir
         )
 
         # Seal the binary with the footer (Must be the last operation)

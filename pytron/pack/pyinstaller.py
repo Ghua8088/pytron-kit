@@ -9,10 +9,7 @@ from ..commands.harvest import generate_nuclear_hooks
 from .installers import build_installer
 from .utils import cleanup_dist
 
-try:
-    from PyInstaller.utils.win32.icon import CopyIcons
-except ImportError:
-    CopyIcons = None
+from .metadata import MetadataEditor
 
 
 def run_pyinstaller_build(
@@ -114,8 +111,12 @@ def run_pyinstaller_build(
             "PyInstaller.utils.cliutils.makespec",
             "--name",
             out_name,
-            "--onedir",
         ]
+
+        if getattr(args, "one_file", False):
+            makespec_cmd.append("--onefile")
+        else:
+            makespec_cmd.append("--onedir")
 
         if getattr(args, "console", False):
             makespec_cmd.append("--console")
@@ -339,116 +340,34 @@ def run_pyinstaller_build(
         return 1
 
     # --------------------------------------------------
-    # POST-BUILD: Chrome Engine Icon Patching (Windows Only)
+    # POST-BUILD: Metadata & Icon Patching
     # --------------------------------------------------
-    if sys.platform == "win32" and requested_engine == "chrome":
-        dist_root = Path("dist") / out_name
-        base_electron = dist_root / "pytron" / "engines" / "chrome" / "electron.exe"
+    dist_root = Path("dist") / out_name
+    editor = MetadataEditor(package_dir=package_dir)
 
-        # RENAME STEP: Create a unique engine binary for process grouping
-        target_name = f"{out_name}-Engine.exe"
+    # 1. Main App Metadata (macOS Bundle / Linux Desktop)
+    # Windows is mostly handled by PyInstaller, but we can double-check or refine here
+    main_exe = dist_root / (f"{out_name}.exe" if sys.platform == "win32" else out_name)
+    if main_exe.exists():
+        editor.update(main_exe, app_icon, settings, dist_dir=dist_root)
+
+    # 2. Chrome Engine Metadata (Windows Only)
+    if sys.platform == "win32" and requested_engine == "chrome":
+        base_electron = dist_root / "pytron" / "engines" / "chrome" / "electron.exe"
+        target_name = f"{out_name}.exe"
         renamed_electron = dist_root / "pytron" / "engines" / "chrome" / target_name
 
         if base_electron.exists():
             log(f"Renaming engine to unique binary: {target_name}", style="dim")
             try:
-                # Use move to rename
-                # If target exists (re-run), delete it first
                 if renamed_electron.exists():
                     os.remove(renamed_electron)
                 os.rename(base_electron, renamed_electron)
-
-                # Update variable for patching
-                dist_electron = renamed_electron
+                
+                # Patch renamed engine
+                editor.update(renamed_electron, app_icon, settings)
             except Exception as e:
-                log(f"Failed to rename engine binary: {e}", style="warning")
-                dist_electron = base_electron  # Fallback
-        else:
-            # It might have already been renamed in a previous run?
-            if renamed_electron.exists():
-                dist_electron = renamed_electron
-            else:
-                dist_electron = base_electron
-
-        if dist_electron.exists() and app_icon:
-            log("Attempting to patch Electron icon...", style="dim")
-
-            # Method 1: PyInstaller Internal Utils (Preferred, No Dep)
-            patched_icon = False
-            if CopyIcons:
-                try:
-                    # CopyIcons(dst, src)
-                    # Note: PyInstaller signature varies. Try standard first.
-                    try:
-                        CopyIcons(str(dist_electron), str(app_icon))
-                    except TypeError:
-                        # Newer PyInstallers might need workpath?
-                        CopyIcons(str(dist_electron), str(app_icon), ".")
-
-                    patched_icon = True
-                    log(
-                        f"Successfully patched Electron icon (Native): {dist_electron}",
-                        style="success",
-                    )
-                except Exception as e:
-                    log(f"Native icon patch failed: {e}", style="warning")
-
-            # Method 2: Rcedit (For Metadata + Icon Fallback)
-            import shutil
-
-            rcedit = shutil.which("rcedit")
-
-            if rcedit:
-                try:
-                    if not patched_icon:
-                        cmd_icon = [rcedit, str(dist_electron), "--set-icon", app_icon]
-                        run_command_with_output(cmd_icon, style="dim")
-
-                    # Patch Metadata (if available)
-                    if "version" in settings:
-                        cmd_ver = [
-                            rcedit,
-                            str(dist_electron),
-                            "--set-file-version",
-                            settings["version"],
-                            "--set-product-version",
-                            settings["version"],
-                        ]
-                        run_command_with_output(cmd_ver, style="dim")
-
-                    # Patch Names
-                    author = settings.get("author", "Pytron App")
-                    copyright = settings.get("copyright", "")
-                    cmd_meta = [
-                        rcedit,
-                        str(dist_electron),
-                        "--set-version-string",
-                        "FileDescription",
-                        out_name,
-                        "--set-version-string",
-                        "ProductName",
-                        out_name,
-                        "--set-version-string",
-                        "CompanyName",
-                        author,
-                        "--set-version-string",
-                        "LegalCopyright",
-                        copyright,
-                    ]
-                    run_command_with_output(cmd_meta, style="dim")
-                    log(
-                        "Successfully patched Electron metadata (rcedit)",
-                        style="success",
-                    )
-
-                except Exception as e:
-                    log(f"Rcedit patching failed: {e}", style="warning")
-            else:
-                if not patched_icon and not CopyIcons:
-                    log(
-                        "Warning: Could not patch Electron icon (Missing PyInstaller utils and rcedit).",
-                        style="warning",
-                    )
+                log(f"Failed to patch engine binary: {e}", style="warning")
 
     if args.installer:
         progress.update(task, description="Building Installer...", completed=90)

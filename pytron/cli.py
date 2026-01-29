@@ -209,6 +209,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--patch-from",
         help="Generate a binary patch against a previous app.pytron payload",
     )
+    p_pkg.add_argument(
+        "--one-file",
+        action="store_true",
+        help="Package into a single executable file (default for Nuitka)",
+    )
+    p_pkg.add_argument(
+        "--one-dir",
+        action="store_true",
+        help="Package into a directory (default for PyInstaller, faster build)",
+    )
     p_pkg.set_defaults(func=cmd_package)
     p_build = sub.add_parser(
         "build-frontend",

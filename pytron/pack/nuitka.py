@@ -32,11 +32,7 @@ def run_nuitka_build(
         # For simplicity, we'll try to map common ones
         for imp in package_context.get("hidden_imports", []):
             extra_plugin_args.append(f"--include-module={imp}")
-        for dat in package_context.get("add_data", []):
-            # add_data usually is src;dest
-            if os.pathsep in dat:
-                src, dest = dat.split(os.pathsep, 1)
-                extra_plugin_args.append(f"--include-data-files={src}={dest}")
+
 
     log(f"Debug: Nuitka block entered. Script: {script}", style="dim")
 
@@ -61,15 +57,17 @@ def run_nuitka_build(
         "-m",
         "nuitka",
         "--standalone",
-        "--onefile",
         "--assume-yes-for-downloads",
-        (
-            f"--output-filename={out_name}.exe"
-            if sys.platform == "win32"
-            else f"--output-filename={out_name}.bin"
-        ),
         "--output-dir=dist",
     ]
+
+    # Default to onefile unless onedir is requested
+    if not getattr(args, "one_dir", False):
+        cmd.append("--onefile")
+        if sys.platform == "win32":
+            cmd.append(f"--output-filename={out_name}.exe")
+        else:
+            cmd.append(f"--output-filename={out_name}.bin")
 
     # Metadata & Versioning
     # Nuitka allows embedding this info directly into the EXE
@@ -141,6 +139,38 @@ def run_nuitka_build(
                 if dst == ".":
                     dst = os.path.basename(src)
                 cmd.append(f"--include-data-file={src}={dst}")
+    
+    # --- Chrome Engine Bundling for Nuitka ---
+    requested_engine = getattr(args, "engine", None)
+    if getattr(args, "chrome", False):
+        requested_engine = "chrome"
+
+    if requested_engine == "chrome":
+        global_engine_path = os.path.expanduser("~/.pytron/engines/chrome")
+        if os.path.exists(global_engine_path):
+            log(
+                f"Auto-bundling Chrome Mojo Engine from: {global_engine_path}",
+                style="info",
+            )
+            # Nuitka dest: pytron/dependancies/chrome
+            cmd.append(f"--include-data-dir={global_engine_path}=pytron/dependancies/chrome")
+
+            # Shell Source (pytron/engines/chrome/shell)
+            shell_src = os.path.join(
+                package_dir, "pytron", "engines", "chrome", "shell"
+            )
+            if os.path.exists(shell_src):
+                log(f"Auto-bundling Chrome Shell Source from: {shell_src}", style="dim")
+                cmd.append(f"--include-data-dir={shell_src}=pytron/engines/chrome/shell")
+            else:
+                log(f"Warning: Chrome Shell source not found at {shell_src}", style="warning")
+        else:
+            log(
+                "Warning: Chrome engine binaries not found locally. Bundle might fail to start.",
+                style="error",
+            )
+            log("Run 'pytron engine install chrome' before packaging.", style="error")
+
     # Add extra plugin args from package_context
     if extra_plugin_args:
         cmd.extend(extra_plugin_args)

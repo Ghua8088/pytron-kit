@@ -13,14 +13,18 @@ protocol.registerSchemesAsPrivileged([
     { scheme: 'pytron', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true } }
 ]);
 
-// Robust Synchronous Logging
+// 16. Robust Synchronous Logging
+const isDebug = process.argv.includes('--pytron-debug') || process.argv.includes('--inspect');
+
 const log = (msg) => {
     const stamped = `[Mojo-Shell][${new Date().toISOString()}] ${msg}`;
     try {
         // Prepare logs dir if needed, or just stdout
         // fs.writeSync(1, stamped + "\n");
-    } catch (e) { }
-    console.log(stamped);
+        console.log(stamped);
+    } catch (e) {
+        // Silent catch for EPIPE (Broken Pipe) or other stdout issues during shutdown
+    }
 };
 
 log("--- MOJO SHELL BOOTING V7 (UNRESTRICTED) ---");
@@ -200,7 +204,7 @@ function sendToPython(type, payload) {
 }
 
 function handlePythonCommand(cmd) {
-    log(`Executing: ${cmd.substring(0, 100)}...`);
+    if (isDebug) log(`Executing: ${cmd.substring(0, 100)}...`);
 
     if (!isAppReady) {
         log("Queueing command (App not ready)");

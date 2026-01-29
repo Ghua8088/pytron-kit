@@ -78,7 +78,7 @@ Pytron is a polyglot framework that leverages the best tools for each layer:
 *   **HTML / CSS**: The backbone of all user interfaces and frontend layouts.
 *   **Shell / PowerShell**: Orchestrates multi-platform automation, environment initialization, and CI/CD workflows.
 
-## Prerequisites
+## Prerequisites    
 
 - **Python 3.7+**
 - **Node.js & npm** (for frontend development)
