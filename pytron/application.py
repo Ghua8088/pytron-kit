@@ -91,10 +91,18 @@ class App(ConfigMixin, WindowMixin, ExtrasMixin, CodegenMixin, NativeMixin, Shel
 
         # AUTO-CODEGEN: Generate TypeScript definitions in debug mode
         if self.config.get("debug", False):
-            # Run codegen after a short delay to ensure discovery of all exposed functions
-            # In a real app, users usually call app.run() after exposing everything.
-            # But we can also trigger it manually or via a hook.
+            # We use a small delay via the event loop or just run it before start
+            # To ensure all plugins/modules have had a chance to .expose()
+            # But usually they do it during __init__ or before app.run()
+            # We'll attach it to a pre-run hook or just before the loop starts in WindowMixin.run
             pass
+
+        # Actually, let's trigger it once here for early feedback
+        if self.config.get("debug", False):
+            try:
+                self.generate_types()
+            except Exception as e:
+                self.logger.debug(f"Initial codegen skipped: {e}")
 
         # Load Plugins
         # We must use the script/exe directory (sys.path[0]), NOT cwd, because cwd changes to AppData

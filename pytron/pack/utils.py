@@ -104,7 +104,7 @@ def get_native_engine_binaries() -> list[str]:
         binaries.append("pytron_native.pyd")
         binaries.append("WebView2Loader.dll")
     elif sys.platform == "darwin":
-         binaries.append("pytron_native.so")
+        binaries.append("pytron_native.so")
     else:
-         binaries.append("pytron_native.so")
+        binaries.append("pytron_native.so")
     return binaries

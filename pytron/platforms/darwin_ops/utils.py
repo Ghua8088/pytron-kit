@@ -1,11 +1,12 @@
 import ctypes
 from . import libs
 
-
 # In Native Engine architecture, 'w' is passed as the NSWindow pointer/integer directly.
+
 
 def get_window(w):
     return w
+
 
 get_hwnd = get_window
 

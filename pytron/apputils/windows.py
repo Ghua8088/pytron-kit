@@ -140,10 +140,12 @@ class WindowMixin:
 
             # Dispatch pending deep link (Cold Start)
             if hasattr(self, "state") and self.state.launch_url:
+                url = self.state.launch_url
                 if hasattr(self, "router"):
-                    # We run this slightly deferred or directly?
-                    # Since window is created but loop not started, methods should work via queue or direct handle.
-                    self.router.dispatch(self.state.launch_url)
+                    self.router.dispatch(url)
+                # Also notify the main window
+                if self.windows:
+                    self.windows[0].emit("pytron:deep-link", {"url": url})
 
             self.windows[0].start()
 
@@ -180,7 +182,9 @@ class WindowMixin:
 
     def register_protocol(self, scheme="pytron"):
         if not getattr(sys, "frozen", False):
-            self.logger.info(f"Skipping protocol registration '{scheme}://' in Development Mode.")
+            self.logger.info(
+                f"Skipping protocol registration '{scheme}://' in Development Mode."
+            )
             return False
 
         try:

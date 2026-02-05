@@ -33,7 +33,7 @@ class ChromeBridge:
                 "action": "init",
                 "options": {
                     "debug": bool(debug),
-                    "root": root_path,    # Pass the root path!
+                    "root": root_path,  # Pass the root path!
                     "frameless": self.adapter.config.get("frameless", False),
                     "icon": self.adapter.config.get("icon", ""),
                     "width": self.adapter.config.get("width", 1024),
@@ -135,21 +135,23 @@ class ChromeWebView(Webview):
         # --- Replicate Webview Basic Init ---
         self.config = config
         self.id = config.get("id") or str(int(__import__("time").time() * 1000))
-        
+
         # 1. Resolve Root
         if getattr(sys, "frozen", False):
             self._app_root = __import__("pathlib").Path(sys.executable).parent
             if hasattr(sys, "_MEIPASS"):
                 self._app_root = __import__("pathlib").Path(sys._MEIPASS)
         else:
-             self._app_root = __import__("pathlib").Path.cwd()
+            self._app_root = __import__("pathlib").Path.cwd()
 
         # 2. Performance Init
         self.app = config.get("__app__")
         if self.app:
             self.thread_pool = self.app.thread_pool
         else:
-            self.thread_pool = __import__("concurrent.futures").futures.ThreadPoolExecutor(max_workers=5)
+            self.thread_pool = __import__(
+                "concurrent.futures"
+            ).futures.ThreadPoolExecutor(max_workers=5)
 
         self._bound_functions = {}
         self._served_data = {}
@@ -170,66 +172,89 @@ class ChromeWebView(Webview):
                 std_dir = os.path.join(base_dir, "pytron", "dependencies", "chrome")
                 mei_dir = getattr(sys, "_MEIPASS", None)
                 search_roots = [base_dir]
-                if std_dir: search_roots.append(std_dir)
-                if mei_dir: search_roots.append(os.path.join(mei_dir, "pytron", "dependencies", "chrome"))
+                if std_dir:
+                    search_roots.append(std_dir)
+                if mei_dir:
+                    search_roots.append(
+                        os.path.join(mei_dir, "pytron", "dependencies", "chrome")
+                    )
                 for root in search_roots:
-                    if not os.path.exists(root): continue
+                    if not os.path.exists(root):
+                        continue
                     for candidate in candidates:
                         candidate_path = os.path.join(root, candidate)
                         if os.path.exists(candidate_path):
-                            if os.path.abspath(candidate_path) == os.path.abspath(sys.executable): continue
+                            if os.path.abspath(candidate_path) == os.path.abspath(
+                                sys.executable
+                            ):
+                                continue
                             renamed_engine = candidate_path
                             break
-                    if renamed_engine: break
+                    if renamed_engine:
+                        break
 
             if renamed_engine:
                 shell_path = renamed_engine
             else:
-                global_path = os.path.expanduser("~/.pytron/engines/chrome/electron.exe")
+                global_path = os.path.expanduser(
+                    "~/.pytron/engines/chrome/electron.exe"
+                )
                 if os.path.exists(global_path):
                     shell_path = global_path
                 else:
-                    search_path = os.path.abspath(os.path.join(os.getcwd(), "..", "pytron-electron-engine", "bin", "electron.exe"))
+                    search_path = os.path.abspath(
+                        os.path.join(
+                            os.getcwd(),
+                            "..",
+                            "pytron-electron-engine",
+                            "bin",
+                            "electron.exe",
+                        )
+                    )
                     if os.path.exists(search_path):
                         shell_path = search_path
                     else:
-                        self.logger.warning("Chrome Engine not found. Auto-provisioning...")
+                        self.logger.warning(
+                            "Chrome Engine not found. Auto-provisioning..."
+                        )
                         forge = ChromeForge()
                         shell_path = forge.provision()
 
         # 4. Resolve Root Path (Robust Common Ancestor Logic)
         # We need a root that covers both 'frontend/dist' and 'plugins'
         raw_url = config.get("url", "")
-        root_path = str(self._app_root) # Default fallback
+        root_path = str(self._app_root)  # Default fallback
         navigate_url = raw_url
-        
+
         if not raw_url.startswith(("http:", "https:", "pytron:")):
-             p = __import__("pathlib").Path(raw_url).resolve()
-             # Assume standard structure: <root>/frontend/dist/index.html
-             # We want <root> to be the base.
-             # Heuristic: Go up until we find 'plugins' folder or hit root
-             candidate = p.parent
-             found_root = None
-             for _ in range(4): # Check up to 4 levels up
-                 if (candidate / "plugins").exists():
-                     found_root = candidate
-                     break
-                 candidate = candidate.parent
-             
-             if found_root:
-                 root_path = str(found_root)
-                 try:
-                     rel = os.path.relpath(str(p), str(found_root))
-                     navigate_url = f"pytron://app/{urllib.parse.quote(rel.replace(os.sep, '/'))}"
-                 except ValueError:
-                      pass
-             else:
-                 root_path = str(p.parent)
-                 navigate_url = f"pytron://app/{urllib.parse.quote(p.name)}"
-        
+            p = __import__("pathlib").Path(raw_url).resolve()
+            # Assume standard structure: <root>/frontend/dist/index.html
+            # We want <root> to be the base.
+            # Heuristic: Go up until we find 'plugins' folder or hit root
+            candidate = p.parent
+            found_root = None
+            for _ in range(4):  # Check up to 4 levels up
+                if (candidate / "plugins").exists():
+                    found_root = candidate
+                    break
+                candidate = candidate.parent
+
+            if found_root:
+                root_path = str(found_root)
+                try:
+                    rel = os.path.relpath(str(p), str(found_root))
+                    navigate_url = (
+                        f"pytron://app/{urllib.parse.quote(rel.replace(os.sep, '/'))}"
+                    )
+                except ValueError:
+                    pass
+            else:
+                root_path = str(p.parent)
+                navigate_url = f"pytron://app/{urllib.parse.quote(p.name)}"
+
         self.logger.info(f"Target Root: {root_path}")
         self.logger.info(f"Navigating to: {navigate_url}")
-        
+
         if "cwd" not in config:
             config["cwd"] = root_path
 
@@ -237,29 +262,31 @@ class ChromeWebView(Webview):
         self.logger.info(f"Using Chrome Shell (v3): {shell_path}")
         self.adapter = ChromeAdapter(shell_path, config)
         self.bridge = ChromeBridge(self.adapter)
-        
+
         self.adapter.start()
         self.adapter.bind_raw(self._handle_ipc_message)
 
         # Mock Window Object
         if "resizable" not in config:
             config["resizable"] = True
-            
-        self.w = self.bridge.webview_create(config.get("debug", False), None, root_path=root_path)
+
+        self.w = self.bridge.webview_create(
+            config.get("debug", False), None, root_path=root_path
+        )
 
         # Safety Net
         self.native = None
 
         # 5. Bindings & Init
         self._init_bindings()
-        
+
         # 6. Window Settings
         self.set_title(config.get("title", "Pytron App"))
         w, h = config.get("dimensions", [800, 600])
         self.set_size(w, h)
         if not config.get("start_hidden", False):
             self.show()
-            
+
         # Navigate
         self.navigate(navigate_url)
 
@@ -268,16 +295,19 @@ class ChromeWebView(Webview):
         current_sys = platform.system()
         try:
             if current_sys == "Windows":
-                 from ...platforms.windows import WindowsImplementation
-                 self._platform = WindowsImplementation()
+                from ...platforms.windows import WindowsImplementation
+
+                self._platform = WindowsImplementation()
             elif current_sys == "Darwin":
-                 from ...platforms.darwin import DarwinImplementation
-                 self._platform = DarwinImplementation()
+                from ...platforms.darwin import DarwinImplementation
+
+                self._platform = DarwinImplementation()
             elif current_sys == "Linux":
-                 from ...platforms.linux import LinuxImplementation
-                 self._platform = LinuxImplementation()
+                from ...platforms.linux import LinuxImplementation
+
+                self._platform = LinuxImplementation()
         except Exception as e:
-             self.logger.warning(f"Failed to load {current_sys} Platform helpers: {e}")
+            self.logger.warning(f"Failed to load {current_sys} Platform helpers: {e}")
 
         # 7. JS Init Shim (With Proxy for Dynamic Methods)
         init_js = f"""
@@ -336,7 +366,7 @@ class ChromeWebView(Webview):
         }})();
         """
         self.eval(init_js)
-        
+
         # Force Resizable Update (Fix gray maximize button)
         # Sometimes init flag is overridden by window style defaults in Electron
         self.bridge.adapter.send({"action": "set_resizable", "resizable": True})
@@ -344,7 +374,7 @@ class ChromeWebView(Webview):
     @property
     def hwnd(self):
         """Override to return Electron HWND instead of native engine HWND."""
-        if hasattr(self.bridge, 'real_hwnd'):
+        if hasattr(self.bridge, "real_hwnd"):
             return self.bridge.real_hwnd
         return 0
 
@@ -354,10 +384,10 @@ class ChromeWebView(Webview):
 
         msg_type = msg.get("type")
         payload = msg.get("payload")
-        
+
         # DEBUG: Log all lifecycle events to trace HWND
         if msg_type == "lifecycle":
-             self.logger.info(f"Chrome Lifecycle Event: {payload}")
+            self.logger.info(f"Chrome Lifecycle Event: {payload}")
 
         # HWND Sync
         if (

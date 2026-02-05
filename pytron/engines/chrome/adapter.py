@@ -53,7 +53,7 @@ class ChromeIPCServer:
 
     def listen(self):
         uid = str(uuid.uuid4())
-        
+
         if self._native:
             try:
                 self.pipe_path_base = self._native.listen(uid)
@@ -64,7 +64,9 @@ class ChromeIPCServer:
                 logger.info("Mojo Shell connected via Native Pipes")
                 return
             except Exception as e:
-                logger.warning(f"Native IPC failed to listen ({e}), falling back to ctypes.")
+                logger.warning(
+                    f"Native IPC failed to listen ({e}), falling back to ctypes."
+                )
 
         if self.is_windows:
             self._listen_windows(uid)
@@ -173,8 +175,8 @@ class ChromeIPCServer:
             try:
                 # The native read loop runs in its own thread and calls back to Python
                 self._native.start_read_loop(callback)
-                # We need to block here like the original read_loop did, to keep the thread alive 
-                # or until disconnect. 
+                # We need to block here like the original read_loop did, to keep the thread alive
+                # or until disconnect.
                 while self.connected:
                     threading.Event().wait(1.0)
                 return
@@ -253,7 +255,7 @@ class ChromeIPCServer:
         with self._lock:
             try:
                 body_str = json.dumps(data_dict)
-                
+
                 if self._native:
                     self._native.send(body_str)
                     return
@@ -312,7 +314,7 @@ class ChromeAdapter:
         pipe_arg = (
             self.ipc.pipe_path_base if self.ipc.is_windows else self.ipc.pipe_path_base
         )
-        
+
         # Use explicit CWD from config if available (set by Engine calculation)
         # otherwise fall back to process CWD.
         pytron_root = self.config.get("cwd", os.getcwd())
@@ -335,16 +337,16 @@ class ChromeAdapter:
         # instead of the Shell Binary Directory.
         # This ensures process.cwd() in Electron matches the Project Root,
         # which is critical for 'pytron://' protocol resolution if the flag is ignored.
-        
+
         # Ensure we don't break binary loading, though.
         # binary_path is abs path, and app_path is abs path. Should be fine.
-        
+
         logger.info(f"Spawning Mojo Process (IPC): {' '.join(cmd)}")
         self.process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd=pytron_root, 
+            cwd=pytron_root,
             text=True,
             bufsize=1,
         )

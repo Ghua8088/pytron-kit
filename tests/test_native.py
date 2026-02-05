@@ -22,9 +22,9 @@ def test_set_start_on_boot_windows(app):
             with patch("pytron.platforms.windows.WindowsImplementation") as MockWin:
                 with patch("sys.frozen", True, create=True):
                     mock_impl = MockWin.return_value
-    
+
                     app.set_start_on_boot(True)
-    
+
                     mock_impl.set_launch_on_boot.assert_called()
                     args = mock_impl.set_launch_on_boot.call_args[0]
                     assert args[0] == "Test_App"  # Safe name

@@ -192,17 +192,19 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         # Check for native dynamic libraries
         # Check for native dynamic libraries
         from ..pack.utils import get_native_engine_binaries
-        
+
         needed = get_native_engine_binaries()
         missing = []
-        
+
         for name in needed:
-             dll_path = pkg_root / "dependencies" / name
-             if not dll_path.exists():
-                 missing.append(name)
-                 
+            dll_path = pkg_root / "dependencies" / name
+            if not dll_path.exists():
+                missing.append(name)
+
         if not missing:
-            console.print(f"  [success]✓[/success] Native Bridge: Found all required binaries ({', '.join(needed)})")
+            console.print(
+                f"  [success]✓[/success] Native Bridge: Found all required binaries ({', '.join(needed)})"
+            )
         else:
             console.print(
                 f"  [error]✗[/error] Native Bridge: MISSING ({', '.join(missing)}) from {pkg_root / 'dependencies'}"

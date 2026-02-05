@@ -51,6 +51,9 @@ jobs:
       - name: Build Rust Loader
         run: python pytron/pack/secure_loader/build_loader.py
 
+      - name: Build Native Engine
+        run: python pytron/engines/native/build.py
+
       - name: Build package
         run: python -m build
 

@@ -8,20 +8,28 @@ from ..exceptions import ConfigError
 
 class ConfigMixin:
     def _setup_logging(self):
-        logging.basicConfig(
-            level=logging.INFO,
-            format="[Pytron] %(asctime)s - %(levelname)s - %(message)s",
-            datefmt="%H:%M:%S",
-        )
+        # If we use basicConfig, it might interfere with user's settings.
+        # But for a simple CLI tool, it's often preferred.
+        # Let's check if the root logger has any handlers already.
+        if not logging.root.handlers:
+            logging.basicConfig(
+                level=logging.INFO,
+                format="[Pytron] %(asctime)s - %(levelname)s - %(message)s",
+                datefmt="%H:%M:%S",
+            )
         self.logger = logging.getLogger("Pytron")
 
     def _check_deep_link(self):
         self.state.launch_url = None
-        if len(sys.argv) > 1:
-            possible_url = sys.argv[1]
-            if possible_url.startswith("pytron:") or "://" in possible_url:
-                self.logger.info(f"App launched via Deep Link: {possible_url}")
-                self.state.launch_url = possible_url
+        # Scan all args for a possible deep link (some OS pass it at different positions)
+        # or it might be preceded by flags.
+        for arg in sys.argv[1:]:
+            if arg.startswith("pytron:") or "://" in arg:
+                # Basic validation: ensure it's not a local file path with :// (unlikely on Win)
+                if ":" in arg and not os.path.exists(arg):
+                    self.logger.info(f"App launched via Deep Link: {arg}")
+                    self.state.launch_url = arg
+                    break
                 # Defer dispatch to run-time if needed, but since plugins/handlers
                 # might be registered AFTER init, we might need to handle this carefully.
                 # However, for now, we'll store it. The handlers usually aren't registered
@@ -221,7 +229,9 @@ class ConfigMixin:
                 os.chdir(self.storage_path)
                 self.logger.info(f"Changed Working Directory to: {self.storage_path}")
             else:
-                self.logger.debug(f"Dev Mode: Storage directory ready at {self.storage_path}")
+                self.logger.debug(
+                    f"Dev Mode: Storage directory ready at {self.storage_path}"
+                )
         except Exception as e:
             self.logger.warning(
                 f"Could not create storage directory at {self.storage_path}: {e}"

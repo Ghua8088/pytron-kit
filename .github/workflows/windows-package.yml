@@ -1,4 +1,4 @@
-name: Package App (macOS)
+name: Package App (Windows)
 
 on:
   push:
@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-macos:
-    name: Build macOS Application
-    runs-on: macos-latest
+  build-windows:
+    name: Build Windows Application
+    runs-on: windows-latest
     
     steps:
       - uses: actions/checkout@v4
@@ -32,23 +32,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install . 
-          # Or pip install pytron-kit if published
-          
-          # Install macOS specific requirements for features like shortcuts
-          pip install pyobjc-framework-Quartz pyobjc-framework-Cocoa
-          
           pytron install
-          
+
       - name: Build Native Engine
         run: python pytron/engines/native/build.py
 
       - name: Build and Package
-        # We use --smart-assets to ensure images/configs are bundled
-        # On macOS, this will produce a .app and potentially a .dmg if configured
-        run: pytron package 
+        # We use --secure for Rust bootloader and --installer for NSIS setup
+        run: pytron package app.py --smart-assets --secure --installer
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pytron-macos-build
+          name: pytron-windows-build
           path: dist/

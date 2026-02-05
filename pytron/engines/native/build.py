@@ -18,7 +18,7 @@ if sys.platform == "win32":
     EXT_NAME = "pytron_native.pyd"  # Python expects .pyd
 elif sys.platform == "darwin":
     LIB_NAME = "libpytron_native.dylib"
-    EXT_NAME = "pytron_native.so"   # Python on Mac expects .so
+    EXT_NAME = "pytron_native.so"  # Python on Mac expects .so
 else:
     LIB_NAME = "libpytron_native.so"
     EXT_NAME = "pytron_native.so"

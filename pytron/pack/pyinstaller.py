@@ -26,6 +26,7 @@ def run_pyinstaller_build(context: BuildContext):
         # 1. Resolve Platform-Specific Libs
         # 1. Resolve Platform-Specific Libs
         from .utils import get_native_engine_binaries
+
         binaries = get_native_engine_binaries()
         dll_dest = os.path.join("pytron", "dependencies")
 

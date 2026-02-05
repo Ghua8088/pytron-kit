@@ -78,8 +78,9 @@ def run_nuitka_build(context: BuildContext):
     # Assets
     # Native Engine Binaries
     from .utils import get_native_engine_binaries
+
     binaries = get_native_engine_binaries()
-    
+
     for bin_name in binaries:
         bin_src = context.package_dir / "pytron" / "dependencies" / bin_name
         if bin_src.exists():
