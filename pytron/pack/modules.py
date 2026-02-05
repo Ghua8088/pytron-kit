@@ -16,10 +16,18 @@ class AssetModule(BuildModule):
         # 1. settings.json
         settings_path = context.script_dir / "settings.json"
         if settings_path.exists():
-            # Force debug=False for production
+            # Force debug=False and requested engine for production
             clean_settings = context.settings.copy()
             if clean_settings.get("debug") is True:
                 clean_settings["debug"] = False
+
+            # If the user packaged for a specific engine, force it in the config
+            if context.engine:
+                clean_settings["engine"] = context.engine
+                log(
+                    f"Enforcing engine: {context.engine} in production bundle",
+                    style="dim",
+                )
 
             temp_settings_dir = context.build_dir / "pytron_assets"
             temp_settings_dir.mkdir(parents=True, exist_ok=True)

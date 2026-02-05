@@ -131,9 +131,36 @@ Function FinishShow
 FunctionEnd
 
 !insertmacro MUI_UNPAGE_WELCOME
+; Custom uninstaller page for data deletion
+Var DeleteAppDataCheckbox
+Var DELETE_APPA_DATA
+UninstPage custom un.ConfirmDataPage un.ConfirmDataPageLeave
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_UNPAGE_FINISH
+
+!include "nsDialogs.nsh"
+
+Function un.ConfirmDataPage
+    nsDialogs::Create 1018
+    Pop $0
+    ${If} $0 == error
+        Abort
+    ${EndIf}
+
+    ${NSD_CreateLabel} 0 0 100% 24u "Uninstall ${NAME}"
+    ${NSD_CreateLabel} 0 30u 100% 24u "Do you want to delete your application data (settings, cache, etc)?$\r$\nThis cannot be undone."
+    
+    ${NSD_CreateCheckbox} 0 60u 100% 10u "Delete application data ($LOCALAPPDATA\${NAME})"
+    Pop $DeleteAppDataCheckbox
+    
+    nsDialogs::Show
+FunctionEnd
+
+Function un.ConfirmDataPageLeave
+    ${NSD_GetState} $DeleteAppDataCheckbox $0
+    StrCpy $DELETE_APPA_DATA $0
+FunctionEnd
 
 !insertmacro MUI_LANGUAGE "English"
  
@@ -194,6 +221,12 @@ Section "Uninstall"
 
     ; Remove files and install directory
     RMDir /r "$INSTDIR"
+
+    ; Delete AppData if requested
+    ${If} $DELETE_APPA_DATA == "1"
+        DetailPrint "Deleting application data..."
+        RMDir /r "$LOCALAPPDATA\${NAME}"
+    ${EndIf}
 
     ; Clean up registry
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${NAME}"
