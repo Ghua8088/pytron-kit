@@ -43,12 +43,14 @@ def build():
     print(f"[INFO] Compiling (Release Mode)... This may take a minute.")
     env = os.environ.copy()
     env["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
-    
+
     # macOS requires special linker flags for PyO3 extensions
     if sys.platform == "darwin":
         rustflags = env.get("RUSTFLAGS", "")
         # Add dynamic lookup for Python symbols
-        env["RUSTFLAGS"] = f"{rustflags} -C link-arg=-undefined -C link-arg=dynamic_lookup".strip()
+        env["RUSTFLAGS"] = (
+            f"{rustflags} -C link-arg=-undefined -C link-arg=dynamic_lookup".strip()
+        )
         print("[INFO] Applying macOS Linker Flags (dynamic_lookup)")
 
     try:
