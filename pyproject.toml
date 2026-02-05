@@ -40,8 +40,15 @@ dependencies = [
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: Apache Software License",
-  "Operating System :: OS Independent",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS :: MacOS X",
+  "Intended Audience :: Developers",
 ]
+
+[project.urls]
+Homepage = "https://pytron-kit.github.io/"
+Repository = "https://github.com/Ghua8088/pytron"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

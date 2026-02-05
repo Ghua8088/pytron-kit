@@ -3,7 +3,7 @@ include README.md
 include pyproject.toml
 
 # 1. Include the core package
-recursive-include pytron *.py *.png *.ico *.exe *.md *.dll *.so *.dylib *.lib
+recursive-include pytron *.py *.png *.ico *.exe *.md *.dll *.so *.pyd *.dylib *.lib
 recursive-include pytron/dependencies *
 
 # 2. Android Shell - The "Allow List"

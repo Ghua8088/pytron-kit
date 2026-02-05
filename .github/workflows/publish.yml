@@ -1,51 +1,37 @@
 name: Release & Publish 🐍
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
-  release-and-publish:
-    name: Build, Release & Publish
-    runs-on: ubuntu-latest
-    
-    permissions:
-      contents: write  # Required for creating GitHub Releases
-      id-token: write  # Required for OIDC PyPI publishing
+  build-wheels:
+    name: 🏗️ Build (${{ matrix.os }} - Py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
 
     steps:
-      - name: Checkout code
+      - name: 🔍 Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
-      - name: Get Version from pyproject.toml
-        id: get_version
-        run: |
-          # Extract version using python (requires 3.11+)
-          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Detected version: $VERSION"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ steps.get_version.outputs.version }}
-          name: Release v${{ steps.get_version.outputs.version }}
-          generate_release_notes: true  # Automatically generates "What's Changed" from PRs
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install build tools
+      - name: 🛠️ Install build tools
         run: |
           python -m pip install --upgrade pip
-          pip install build
+          pip install build wheel setuptools
 
-      - name: Install Linux Dependencies
+      - name: 🐧 Install Linux Dependencies
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -60,19 +46,86 @@ jobs:
             libxdo-dev \
             gir1.2-gtk-4.0
 
-      - name: Install Rust
+      - name: 🍎 Install macOS Dependencies
+        if: matrix.os == 'macos-latest'
+        run: |
+          python -m pip install pyobjc-framework-Quartz pyobjc-framework-Cocoa
+
+      - name: 🦀 Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build Rust Loader
+      - name: 🛡️ Build Rust Loader
         run: python pytron/pack/secure_loader/build_loader.py
 
-      - name: Build Native Engine
+      - name: 🦾 Build Native Engine
         run: python pytron/engines/native/build.py
 
-      - name: Build package
-        run: python -m build
+      - name: 📦 Build Platform Wheel
+        run: python -m build --wheel
 
-      - name: Publish to PyPI
+      - name: 📤 Upload Wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.python-version }}
+          path: dist/*.whl
+
+  build-sdist:
+    name: 📄 Build SDist
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔍 Checkout code
+        uses: actions/checkout@v4
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 📦 Build SDist
+        run: |
+          pip install build
+          python -m build --sdist
+      - name: 📤 Upload SDist
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  release:
+    name: 🚀 Create Release & Publish
+    runs-on: ubuntu-latest
+    needs: [build-wheels, build-sdist]
+    permissions:
+      contents: write  # Required for creating GitHub Releases
+      id-token: write  # Required for OIDC PyPI publishing
+    steps:
+      - name: 🔍 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🏷️ Get Version
+        id: get_version
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Detected version: $VERSION"
+
+      - name: 📥 Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*'
+          path: dist
+          merge-multiple: true
+
+      - name: 🎁 Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: Pytron Kit v${{ steps.get_version.outputs.version }} 🧊
+          generate_release_notes: true
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🐍 Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true

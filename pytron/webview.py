@@ -109,7 +109,6 @@ class Webview:
             # bindings can be registered (via UserEvent::Bind) BEFORE the real app loads.
             # This prevents race conditions where IPC calls happen before callbacks are ready.
             self._start_url = final_url
-
             self.native = pytron_native.NativeWebview(
                 debug,
                 "about:blank",  # Start empty
