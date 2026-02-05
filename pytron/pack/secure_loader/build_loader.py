@@ -2,6 +2,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+import os
 
 
 def build_and_deploy():
@@ -18,13 +19,23 @@ def build_and_deploy():
     ext = ".exe" if sys.platform == "win32" else ""
     loader_name = f"pytron_rust_bootloader{ext}"
 
-    print(f"[*] Starting build of {loader_name}...")
-
     # 3. Compile Rust (Release mode)
+    print(f"[*] Starting build of {loader_name}...")
+    env = os.environ.copy()
+
+    # macOS requires special linker flags for PyO3
+    if sys.platform == "darwin":
+        rustflags = env.get("RUSTFLAGS", "")
+        # Add dynamic lookup for Python symbols
+        env["RUSTFLAGS"] = (
+            f"{rustflags} -C link-arg=-undefined -C link-arg=dynamic_lookup".strip()
+        )
+        print("[INFO] Applying macOS Linker Flags (dynamic_lookup)")
+
     try:
         cargo_bin = shutil.which("cargo") or "cargo"
         subprocess.run(
-            [cargo_bin, "build", "--release"], cwd=str(base_dir), check=True
+            [cargo_bin, "build", "--release"], cwd=str(base_dir), check=True, env=env
         )  # nosec B603
     except FileNotFoundError:
         print("[!] Error: 'cargo' not found. Please install Rust (https://rustup.rs).")

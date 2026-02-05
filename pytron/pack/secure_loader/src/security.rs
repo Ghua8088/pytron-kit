@@ -1,15 +1,17 @@
-use std::env;
 // use std::fs;
 // use std::io::{Read, Seek, SeekFrom};
 // use aes_gcm::{
 //     aead::{Aead, KeyInit},
 //     Aes256Gcm, Nonce
 // };
+
+#[cfg(windows)]
 use obfstr::obfstr;
 
 #[cfg(windows)]
 extern crate winapi;
 
+#[cfg(windows)]
 use crate::ui::alert;
 
 pub fn check_debugger() {

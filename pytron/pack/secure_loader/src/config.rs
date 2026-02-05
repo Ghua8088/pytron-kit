@@ -5,6 +5,7 @@ use std::fs;
 #[derive(Deserialize, Debug)]
 pub struct Settings {
     pub title: Option<String>,
+    #[allow(dead_code)]
     pub version: Option<String>,
     pub author: Option<String>,
 }
