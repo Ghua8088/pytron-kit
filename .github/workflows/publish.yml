@@ -96,6 +96,9 @@ jobs:
     permissions:
       contents: write  # Required for creating GitHub Releases
       id-token: write  # Required for OIDC PyPI publishing
+    environment:
+      name: pypi
+      url: https://pypi.org/p/pytron-kit
     steps:
       - name: 🔍 Checkout code
         uses: actions/checkout@v4

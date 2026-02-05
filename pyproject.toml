@@ -48,7 +48,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://pytron-kit.github.io/"
-Repository = "https://github.com/Ghua8088/pytron"
+Repository = "https://github.com/Ghua8088/pytron-kit"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
