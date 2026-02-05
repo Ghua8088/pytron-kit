@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 import os
 
+
 def build_and_deploy():
     """
     Compiles the Rust bootloader and deploys the binary to the bin/ folder.
@@ -21,12 +22,14 @@ def build_and_deploy():
     # 3. Compile Rust (Release mode)
     print(f"[*] Starting build of {loader_name}...")
     env = os.environ.copy()
-    
+
     # macOS requires special linker flags for PyO3
     if sys.platform == "darwin":
         rustflags = env.get("RUSTFLAGS", "")
         # Add dynamic lookup for Python symbols
-        env["RUSTFLAGS"] = f"{rustflags} -C link-arg=-undefined -C link-arg=dynamic_lookup".strip()
+        env["RUSTFLAGS"] = (
+            f"{rustflags} -C link-arg=-undefined -C link-arg=dynamic_lookup".strip()
+        )
         print("[INFO] Applying macOS Linker Flags (dynamic_lookup)")
 
     try:
