@@ -95,3 +95,16 @@ def cleanup_dist(dist_path: Path, preserve_tk: bool = False):
                     os.remove(full_path)
                 except Exception:
                     pass
+
+
+def get_native_engine_binaries() -> list[str]:
+    """Returns the names of the native engine binary artifacts."""
+    binaries = []
+    if sys.platform == "win32":
+        binaries.append("pytron_native.pyd")
+        binaries.append("WebView2Loader.dll")
+    elif sys.platform == "darwin":
+         binaries.append("pytron_native.so")
+    else:
+         binaries.append("pytron_native.so")
+    return binaries

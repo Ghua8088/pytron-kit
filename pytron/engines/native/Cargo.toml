@@ -1,0 +1,27 @@
+[package]
+name = "pytron_native"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pytron_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["extension-module"] }
+wry = "0.40"
+tao = "0.28"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+urlencoding = "2"
+mime_guess = "2.0"
+image = "0.25"
+url = "2.5"
+rfd = "0.15"
+tray-icon = "0.19"
+notify-rust = "4"
+
+
+# Windows-specific dependencies for native message box if needed
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.52", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_UI_Shell", "Win32_System_Com", "Win32_UI_Controls", "Win32_System_Pipes", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_IO"] }

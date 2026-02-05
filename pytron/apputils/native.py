@@ -16,15 +16,11 @@ class NativeMixin:
         # Sanitize for registry key
         safe_name = "".join(c if c.isalnum() else "_" for c in app_name)
 
-        exe_path = sys.executable
         if not getattr(sys, "frozen", False):
-            # Development mode: python.exe "path/to/script.py"
-            # This is tricky because we need arguments.
-            # Windows registry Run key handles arguments fine.
-            main_script = os.path.abspath(sys.argv[0])
-            exe_path = f'"{sys.executable}" "{main_script}"'
-        else:
-            exe_path = f'"{exe_path}"'  # Quote for safety
+            self.logger.info("Skipping Start-on-Boot registration in Development Mode.")
+            return False
+
+        exe_path = f'"{sys.executable}"'  # Quote for safety
 
         # We need a platform instance.
         # Since App doesn't hold it, we instantiate temporarily or grab from first window

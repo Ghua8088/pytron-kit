@@ -5,6 +5,7 @@ import logging
 import ctypes
 import platform
 import subprocess
+import urllib.parse
 from ...webview import Webview
 from .adapter import ChromeAdapter
 from ...serializer import pytron_serialize
@@ -26,12 +27,13 @@ class ChromeBridge:
         self._callbacks = {}
         self.real_hwnd = 0
 
-    def webview_create(self, debug, window):
+    def webview_create(self, debug, window, root_path=None):
         self.adapter.send(
             {
                 "action": "init",
                 "options": {
                     "debug": bool(debug),
+                    "root": root_path,    # Pass the root path!
                     "frameless": self.adapter.config.get("frameless", False),
                     "icon": self.adapter.config.get("icon", ""),
                     "width": self.adapter.config.get("width", 1024),
@@ -130,13 +132,31 @@ class ChromeWebView(Webview):
     def __init__(self, config):
         self.logger = logging.getLogger("Pytron.ChromeWebView")
 
-        # 1. Resolve Binary (Production vs Development)
-        # 1. Resolve Binary (Priority: Packaged -> Local Dev -> Global)
+        # --- Replicate Webview Basic Init ---
+        self.config = config
+        self.id = config.get("id") or str(int(__import__("time").time() * 1000))
+        
+        # 1. Resolve Root
+        if getattr(sys, "frozen", False):
+            self._app_root = __import__("pathlib").Path(sys.executable).parent
+            if hasattr(sys, "_MEIPASS"):
+                self._app_root = __import__("pathlib").Path(sys._MEIPASS)
+        else:
+             self._app_root = __import__("pathlib").Path.cwd()
+
+        # 2. Performance Init
+        self.app = config.get("__app__")
+        if self.app:
+            self.thread_pool = self.app.thread_pool
+        else:
+            self.thread_pool = __import__("concurrent.futures").futures.ThreadPoolExecutor(max_workers=5)
+
+        self._bound_functions = {}
+        self._served_data = {}
+
+        # 3. Resolve Chrome Binary
         shell_path = config.get("engine_path")
         if not shell_path:
-            # A. Package Path (PRIORITY for Frozen/Packaged Apps)
-            # Checks for: {App}.exe, {App}-Renderer.exe, {App}-Engine.exe, and electron.exe
-            # in BOTH the flat directory (legacy) and the standard 'pytron/dependencies/chrome' folder.
             renamed_engine = None
             if getattr(sys, "frozen", False):
                 exe_name = os.path.splitext(os.path.basename(sys.executable))[0]
@@ -144,92 +164,189 @@ class ChromeWebView(Webview):
                     f"{exe_name}.exe",
                     f"{exe_name}-Renderer.exe",
                     f"{exe_name}-Engine.exe",
-                    "electron.exe",  # Fallback for un-renamed inside package
+                    "electron.exe",
                 ]
-
-                # Current Exe Dir (Flat Layout)
                 base_dir = os.path.dirname(sys.executable)
-                # Standard Pytron Layout (inside _internal or root)
                 std_dir = os.path.join(base_dir, "pytron", "dependencies", "chrome")
-                # Also check sys._MEIPASS if available (PyInstaller OneFile - though Chrome uses OneDir usually)
                 mei_dir = getattr(sys, "_MEIPASS", None)
-
                 search_roots = [base_dir]
-                if std_dir:
-                    search_roots.append(std_dir)
-                if mei_dir:
-                    search_roots.append(
-                        os.path.join(mei_dir, "pytron", "dependencies", "chrome")
-                    )
-
+                if std_dir: search_roots.append(std_dir)
+                if mei_dir: search_roots.append(os.path.join(mei_dir, "pytron", "dependencies", "chrome"))
                 for root in search_roots:
-                    if not os.path.exists(root):
-                        continue
+                    if not os.path.exists(root): continue
                     for candidate in candidates:
                         candidate_path = os.path.join(root, candidate)
                         if os.path.exists(candidate_path):
-                            # Don't pick ourselves if we are the main git exe and looking at .
-                            if os.path.abspath(candidate_path) == os.path.abspath(
-                                sys.executable
-                            ):
-                                continue
+                            if os.path.abspath(candidate_path) == os.path.abspath(sys.executable): continue
                             renamed_engine = candidate_path
                             break
-                    if renamed_engine:
-                        break
+                    if renamed_engine: break
 
             if renamed_engine:
                 shell_path = renamed_engine
             else:
-                # B. Global Engine Path (Forge / User Home)
-                global_path = os.path.expanduser(
-                    "~/.pytron/engines/chrome/electron.exe"
-                )
+                global_path = os.path.expanduser("~/.pytron/engines/chrome/electron.exe")
                 if os.path.exists(global_path):
                     shell_path = global_path
                 else:
-                    # C. Local Workspace Path (Dev - e.g. running from source)
-                    search_path = os.path.abspath(
-                        os.path.join(
-                            os.getcwd(),
-                            "..",
-                            "pytron-electron-engine",
-                            "bin",
-                            "electron.exe",
-                        )
-                    )
+                    search_path = os.path.abspath(os.path.join(os.getcwd(), "..", "pytron-electron-engine", "bin", "electron.exe"))
                     if os.path.exists(search_path):
                         shell_path = search_path
                     else:
-                        # D. Auto-Provision (Last Resort)
-                        self.logger.warning(
-                            "Chrome Engine not found. Auto-provisioning..."
-                        )
+                        self.logger.warning("Chrome Engine not found. Auto-provisioning...")
                         forge = ChromeForge()
                         shell_path = forge.provision()
 
+        # 4. Resolve Root Path (Robust Common Ancestor Logic)
+        # We need a root that covers both 'frontend/dist' and 'plugins'
+        raw_url = config.get("url", "")
+        root_path = str(self._app_root) # Default fallback
+        navigate_url = raw_url
+        
+        if not raw_url.startswith(("http:", "https:", "pytron:")):
+             p = __import__("pathlib").Path(raw_url).resolve()
+             # Assume standard structure: <root>/frontend/dist/index.html
+             # We want <root> to be the base.
+             # Heuristic: Go up until we find 'plugins' folder or hit root
+             candidate = p.parent
+             found_root = None
+             for _ in range(4): # Check up to 4 levels up
+                 if (candidate / "plugins").exists():
+                     found_root = candidate
+                     break
+                 candidate = candidate.parent
+             
+             if found_root:
+                 root_path = str(found_root)
+                 try:
+                     rel = os.path.relpath(str(p), str(found_root))
+                     navigate_url = f"pytron://app/{urllib.parse.quote(rel.replace(os.sep, '/'))}"
+                 except ValueError:
+                      pass
+             else:
+                 root_path = str(p.parent)
+                 navigate_url = f"pytron://app/{urllib.parse.quote(p.name)}"
+        
+        self.logger.info(f"Target Root: {root_path}")
+        self.logger.info(f"Navigating to: {navigate_url}")
+        
+        if "cwd" not in config:
+            config["cwd"] = root_path
+
+        # 5. Initialize Bridge & Start Adapter
         self.logger.info(f"Using Chrome Shell (v3): {shell_path}")
         self.adapter = ChromeAdapter(shell_path, config)
         self.bridge = ChromeBridge(self.adapter)
-        self._bound_functions = {}
-
-        # 2. Context SWAP & Global Patching (Permanent)
-        # We replace the native lib with our Bridge PERMANENTLY for this session.
-        import pytron.webview as wv
-
-        wv.lib = self.bridge
-
-        if platform.system() == "Windows":
-            try:
-                from ...platforms.windows_ops import utils as win_utils
-
-                win_utils.lib = self.bridge
-            except ImportError:
-                pass
-
+        
         self.adapter.start()
         self.adapter.bind_raw(self._handle_ipc_message)
-        super().__init__(config)
+
+        # Mock Window Object
+        if "resizable" not in config:
+            config["resizable"] = True
+            
+        self.w = self.bridge.webview_create(config.get("debug", False), None, root_path=root_path)
+
+        # Safety Net
+        self.native = None
+
+        # 5. Bindings & Init
+        self._init_bindings()
+        
+        # 6. Window Settings
+        self.set_title(config.get("title", "Pytron App"))
+        w, h = config.get("dimensions", [800, 600])
+        self.set_size(w, h)
+        if not config.get("start_hidden", False):
+            self.show()
+            
+        # Navigate
+        self.navigate(navigate_url)
+
+        # --- Platform Helpers (All Platforms) ---
+        self._platform = None
+        current_sys = platform.system()
+        try:
+            if current_sys == "Windows":
+                 from ...platforms.windows import WindowsImplementation
+                 self._platform = WindowsImplementation()
+            elif current_sys == "Darwin":
+                 from ...platforms.darwin import DarwinImplementation
+                 self._platform = DarwinImplementation()
+            elif current_sys == "Linux":
+                 from ...platforms.linux import LinuxImplementation
+                 self._platform = LinuxImplementation()
+        except Exception as e:
+             self.logger.warning(f"Failed to load {current_sys} Platform helpers: {e}")
+
+        # 7. JS Init Shim (With Proxy for Dynamic Methods)
+        init_js = f"""
+        (function() {{
+            try {{
+                if (!window.pytron) {{
+                    window.pytron = {{ is_ready: true, id: "{self.id}" }};
+                }} else {{
+                    window.pytron.is_ready = true;
+                    window.pytron.id = "{self.id}";
+                }}
+            }} catch (e) {{
+                // Already read-only or handled by bridge
+            }}
+            
+            window.pytron_is_native = true;
+
+            // Universal IPC Bridge
+            if (!window.__pytron_native_bridge) {{
+                window.__pytron_native_bridge = (method, args) => {{
+                    const seq = Math.random().toString(36).substring(2, 10);
+                    if (window.ipc) {{
+                         window.ipc.postMessage(JSON.stringify({{id: seq, method: method, params: args}}));
+                    }}
+                    return new Promise((resolve, reject) => {{
+                        window._rpc = window._rpc || {{}};
+                        window._rpc[seq] = {{resolve, reject}};
+                    }});
+                }};
+            }}
+
+            // Dynamic Proxy to handle ANY method call from frontend (hide, center, etc.)
+            try {{
+                const existing = window.pytron;
+                window.pytron = new Proxy(existing || {{}}, {{
+                    get: function(target, prop) {{
+                        if (prop in target) return target[prop];
+                        // If not found, assume it's a bridge call
+                        return (...args) => window.__pytron_native_bridge(prop, args);
+                    }}
+                }});
+            }} catch (e) {{
+                // Skip proxy if window.pytron is read-only
+            }}
+            
+            // Standard Pollys & Asset Bridge
+            window.pytron_drag = () => window.__pytron_native_bridge('pytron_drag', []);
+            window.pytron_minimize = () => window.__pytron_native_bridge('pytron_minimize', []);
+            window.pytron_get_asset = (key) => window.__pytron_native_bridge('pytron_get_asset', [key]);
+            
+            window['pytron_drag'] = window.pytron_drag;
+            window['pytron_minimize'] = window.pytron_minimize;
+            window['pytron_get_asset'] = window.pytron_get_asset;
+            window['__pytron_vap_get'] = window.pytron_get_asset; 
+
+        }})();
+        """
+        self.eval(init_js)
+        
+        # Force Resizable Update (Fix gray maximize button)
+        # Sometimes init flag is overridden by window style defaults in Electron
+        self.bridge.adapter.send({"action": "set_resizable", "resizable": True})
+
+    @property
+    def hwnd(self):
+        """Override to return Electron HWND instead of native engine HWND."""
+        if hasattr(self.bridge, 'real_hwnd'):
+            return self.bridge.real_hwnd
+        return 0
 
     def _handle_ipc_message(self, msg):
         import inspect
@@ -237,6 +354,10 @@ class ChromeWebView(Webview):
 
         msg_type = msg.get("type")
         payload = msg.get("payload")
+        
+        # DEBUG: Log all lifecycle events to trace HWND
+        if msg_type == "lifecycle":
+             self.logger.info(f"Chrome Lifecycle Event: {payload}")
 
         # HWND Sync
         if (

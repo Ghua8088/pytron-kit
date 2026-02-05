@@ -58,6 +58,12 @@ class AssetModule(BuildModule):
             except Exception as e:
                 log(f"Warning: Smart assets failed: {e}", style="warning")
 
+        # 4. Mandatory Resources Folder
+        resources_path = context.script_dir / "resources"
+        if resources_path.exists() and resources_path.is_dir():
+            log(f"Bundling mandatory resources: {resources_path.name}", style="dim")
+            context.add_data.append(f"{resources_path}{os.pathsep}resources")
+
 
 class EngineModule(BuildModule):
     def prepare(self, context: BuildContext):

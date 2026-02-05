@@ -39,13 +39,10 @@ class Updater:
     def check(self, url: str) -> dict | None:
         """
         Checks for updates at the given URL.
-        Expected JSON format at URL:
-        {
-            "version": "1.0.1",
-            "url": "https://example.com/downloads/MyApp-1.0.1.exe",
-            "notes": "Bug fixes..."
-        }
         """
+        if not getattr(sys, "frozen", False):
+            self.logger.debug("Skipping update check in development mode.")
+            return None
         self.logger.info(f"Checking for updates at {url}...")
         try:
             if not url.startswith("https://"):

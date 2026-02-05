@@ -268,13 +268,9 @@ if __name__ == "__main__":
         return 0
 
 
-def get_webview_lib():
-    if sys.platform == "win32":
-        return "webview.dll"
-    elif sys.platform == "darwin":
-        return "libwebview.dylib"
-    else:
-        return "libwebview.so"
+def get_native_engine_libs():
+    from .utils import get_native_engine_binaries
+    return get_native_engine_binaries()
 
 
 from .utils import cleanup_dist as prune_junk_folders

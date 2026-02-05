@@ -51,13 +51,13 @@ def test_cross_platform_path_logic():
     """
     Verifies that the packager generates valid cross-platform binary names.
     """
-    from pytron.pack.secure import get_webview_lib
+    from pytron.pack.utils import get_native_engine_binaries
     import sys
 
-    lib = get_webview_lib()
+    libs = get_native_engine_binaries()
     if sys.platform == "win32":
-        assert lib == "webview.dll"
+        assert "pytron_native.pyd" in libs
     elif sys.platform == "darwin":
-        assert lib == "libwebview.dylib"
+        assert "pytron_native.so" in libs
     else:
-        assert lib == "libwebview.so"
+        assert "pytron_native.so" in libs

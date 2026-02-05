@@ -76,19 +76,14 @@ def run_nuitka_build(context: BuildContext):
             cmd.append("--windows-console-mode=disable")
 
     # Assets
-    dll_name = "webview.dll"
-    if sys.platform == "linux":
-        dll_name = "libwebview.so"
-    elif sys.platform == "darwin":
-        dll_name = (
-            "libwebview_arm64.dylib"
-            if platform.machine() == "arm64"
-            else "libwebview_x64.dylib"
-        )
-
-    dll_src = context.package_dir / "pytron" / "dependencies" / dll_name
-    if dll_src.exists():
-        cmd.append(f"--include-data-file={dll_src}=pytron/dependencies/{dll_name}")
+    # Native Engine Binaries
+    from .utils import get_native_engine_binaries
+    binaries = get_native_engine_binaries()
+    
+    for bin_name in binaries:
+        bin_src = context.package_dir / "pytron" / "dependencies" / bin_name
+        if bin_src.exists():
+            cmd.append(f"--include-data-file={bin_src}=pytron/dependencies/{bin_name}")
 
     for item in context.add_data:
         if os.pathsep in item:

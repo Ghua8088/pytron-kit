@@ -67,7 +67,7 @@ pytron = [
     "utf8_hook.py", 
     "manifests/*",
     "dependencies/**/*", 
-    "engines/**/*",
+    "engines/chrome/**/*",
     "engines/chrome/shell/*",
     "ai_guide.md",
     "platforms/android/shell/app/src/main/assets/python/python314.zip",

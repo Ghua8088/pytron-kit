@@ -24,17 +24,9 @@ def run_pyinstaller_build(context: BuildContext):
         )
 
         # 1. Resolve Platform-Specific Libs
-        dll_name = "webview.dll"
-        if sys.platform == "linux":
-            dll_name = "libwebview.so"
-        elif sys.platform == "darwin":
-            dll_name = (
-                "libwebview_arm64.dylib"
-                if platform.machine() == "arm64"
-                else "libwebview_x64.dylib"
-            )
-
-        dll_src = context.package_dir / "pytron" / "dependencies" / dll_name
+        # 1. Resolve Platform-Specific Libs
+        from .utils import get_native_engine_binaries
+        binaries = get_native_engine_binaries()
         dll_dest = os.path.join("pytron", "dependencies")
 
         # 2. Build Makespec Command
@@ -61,8 +53,11 @@ def run_pyinstaller_build(context: BuildContext):
         else:
             makespec_cmd.append("--noconsole")
 
-        # Add Core Webview DLL
-        makespec_cmd.append(f"--add-binary={dll_src}{os.pathsep}{dll_dest}")
+        # Add Core Native Engine Binaries
+        for bin_name in binaries:
+            bin_src = context.package_dir / "pytron" / "dependencies" / bin_name
+            if bin_src.exists():
+                makespec_cmd.append(f"--add-binary={bin_src}{os.pathsep}{dll_dest}")
 
         # Add Scripts
         # For secure builds, we add BOTH the bootstrap and the original script

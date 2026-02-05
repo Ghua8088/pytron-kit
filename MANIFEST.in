@@ -29,6 +29,7 @@ recursive-include pytron/platforms/android/shell/gradle/wrapper *
 prune pytron/pack/secure_loader/src
 exclude pytron/pack/secure_loader/Cargo.toml
 exclude pytron/pack/secure_loader/build_loader.py
+prune pytron/engines/native
 prune pytron/pack/secure_loader/target
 prune pytron/platforms/android/shell/app/build
 prune pytron/platforms/android/shell/.gradle

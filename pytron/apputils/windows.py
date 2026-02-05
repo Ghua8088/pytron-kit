@@ -179,6 +179,10 @@ class WindowMixin:
                     self.logger.debug(f"Failed to cleanup temp dir {path}: {e}")
 
     def register_protocol(self, scheme="pytron"):
+        if not getattr(sys, "frozen", False):
+            self.logger.info(f"Skipping protocol registration '{scheme}://' in Development Mode.")
+            return False
+
         try:
             # Use the platform implementation from the webview instance if it exists
             # otherwise fall back to detection (Webview creates the correct impl on init)

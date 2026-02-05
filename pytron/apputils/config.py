@@ -95,7 +95,7 @@ class ConfigMixin:
             )
         app_id = f"{author}.{safe_title}.App"
 
-        if sys.platform == "win32":
+        if sys.platform == "win32" and getattr(sys, "frozen", False):
             try:
                 from ..platforms.windows import WindowsImplementation
 
@@ -125,8 +125,8 @@ class ConfigMixin:
         import threading
         import os
 
-        # Skip during tests as they often create multiple app instances rapidly
-        if "PYTEST_CURRENT_TEST" in os.environ:
+        # Skip during tests and development as they often require flexibility
+        if "PYTEST_CURRENT_TEST" in os.environ or not getattr(sys, "frozen", False):
             return
 
         # Generate a stable port between 10000-60000 based on app_id
@@ -217,8 +217,11 @@ class ConfigMixin:
 
         try:
             os.makedirs(self.storage_path, exist_ok=True)
-            os.chdir(self.storage_path)
-            self.logger.info(f"Changed Working Directory to: {self.storage_path}")
+            if getattr(sys, "frozen", False):
+                os.chdir(self.storage_path)
+                self.logger.info(f"Changed Working Directory to: {self.storage_path}")
+            else:
+                self.logger.debug(f"Dev Mode: Storage directory ready at {self.storage_path}")
         except Exception as e:
             self.logger.warning(
                 f"Could not create storage directory at {self.storage_path}: {e}"

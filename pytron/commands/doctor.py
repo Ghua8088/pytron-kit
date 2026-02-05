@@ -190,20 +190,22 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         console.print(f"  [success]✓[/success] Pytron Location: {pkg_root.parent}")
 
         # Check for native dynamic libraries
-        dll_name = (
-            "webview.dll"
-            if platform.system() == "Windows"
-            else (
-                "libwebview.so" if platform.system() == "Linux" else "libwebview.dylib"
-            )
-        )
-        dll_path = pkg_root / "dependencies" / dll_name
-
-        if dll_path.exists():
-            console.print(f"  [success]✓[/success] Native Bridge: {dll_name} found")
+        # Check for native dynamic libraries
+        from ..pack.utils import get_native_engine_binaries
+        
+        needed = get_native_engine_binaries()
+        missing = []
+        
+        for name in needed:
+             dll_path = pkg_root / "dependencies" / name
+             if not dll_path.exists():
+                 missing.append(name)
+                 
+        if not missing:
+            console.print(f"  [success]✓[/success] Native Bridge: Found all required binaries ({', '.join(needed)})")
         else:
             console.print(
-                f"  [error]✗[/error] Native Bridge: {dll_name} MISSING from {pkg_root / 'dependencies'}"
+                f"  [error]✗[/error] Native Bridge: MISSING ({', '.join(missing)}) from {pkg_root / 'dependencies'}"
             )
 
     except Exception as e:

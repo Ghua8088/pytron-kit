@@ -1,8 +1,4 @@
-from ...bindings import lib
-
 
 def get_hwnd(w):
-    try:
-        return lib.webview_get_window(w)
-    except:
-        return 0
+    # In Native Engine architecture, 'w' is passed as the HWND integer directly.
+    return w
