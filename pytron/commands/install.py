@@ -128,7 +128,8 @@ def cmd_install(args: argparse.Namespace) -> int:
 
             # Use run_command_with_output to stream logs cleanly above the progress bar
             ret = run_command_with_output(
-                [str(venv_python), "-m", "pip", "install"] + packages_to_install
+                [str(venv_python), "-m", "pip", "install", "--no-build-isolation"]
+                + packages_to_install
             )
 
             progress.stop()
@@ -210,7 +211,6 @@ def cmd_install(args: argparse.Namespace) -> int:
 
                     current_deps = new_deps
                     updated = True
-                    updated = True
                 else:
                     log(
                         f"Warning: Could not resolve installed version for '{pkg_arg}'. Skipping requirement update.",
@@ -244,7 +244,8 @@ def cmd_install(args: argparse.Namespace) -> int:
                 task = progress.add_task("Syncing Dependencies...", total=None)
 
                 ret = run_command_with_output(
-                    [str(venv_python), "-m", "pip", "install"] + current_deps
+                    [str(venv_python), "-m", "pip", "install", "--no-build-isolation"]
+                    + current_deps
                 )
 
                 progress.stop()

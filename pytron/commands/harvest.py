@@ -8,6 +8,7 @@ def generate_nuclear_hooks(
     collect_all_mode: bool = True,
     blacklist: Iterable[str] | None = None,
     search_path: list[str] | None = None,
+    whitelist: Iterable[str] | None = None,
 ) -> None:
     """
     Scans the current Python environment and writes PyInstaller hook files that
@@ -19,6 +20,7 @@ def generate_nuclear_hooks(
     - collect_all_mode: if True use `collect_all`, else use `collect_submodules`
     - blacklist: optional iterable of package names to skip (case-insensitive)
     - search_path: optional list of paths to search for distributions (defaults to sys.path)
+    - whitelist: optional iterable of package names to ONLY include (overrides scan)
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -37,6 +39,7 @@ def generate_nuclear_hooks(
         ]
 
     bl = {n.lower() for n in blacklist}
+    wl = {n.lower() for n in whitelist} if whitelist else None
 
     count = 0
     # Use the provided search_path if available
@@ -63,6 +66,11 @@ def generate_nuclear_hooks(
             try:
                 name = Path(dist.locate_file("")).name
             except Exception:
+                continue
+
+        if wl is not None:
+            # If whitelist is provided, skip if not in it
+            if name.lower() not in wl:
                 continue
 
         if name.lower() in bl:

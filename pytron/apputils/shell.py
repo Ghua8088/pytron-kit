@@ -52,10 +52,22 @@ class Shell:
         Requires 'send2trash' library if available, else fails.
         """
         try:
+            import logging
+
+            logger = logging.getLogger("Pytron.Shell")
             from send2trash import send2trash
 
             send2trash(path)
             return True
         except ImportError:
-            # Fallback or warning
+            import logging
+
+            logging.getLogger("Pytron.Shell").warning(
+                "send2trash is not installed. File cannot be moved to trash."
+            )
+            return False
+        except Exception as e:
+            import logging
+
+            logging.getLogger("Pytron.Shell").error(f"Failed to trash item: {e}")
             return False

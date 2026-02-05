@@ -10,6 +10,11 @@ import subprocess
 import tempfile
 import ctypes
 
+try:
+    from ...dependencies import pytron_native
+except ImportError:
+    pytron_native = None
+
 logger = logging.getLogger("Pytron.ChromeAdapter")
 
 
@@ -29,19 +34,39 @@ class ChromeIPCServer:
         self.listening_event = threading.Event()
         self.pipe_path_base = None
 
-        # Windows Handles
-        self._win_in_handle = None  # We Write to this
-        self._win_out_handle = None  # We Read from this
+        # Native implementation (Rust)
+        self._native = None
+        if pytron_native:
+            try:
+                self._native = pytron_native.ChromeIPC()
+            except:
+                pass
 
-        # Unix Sockets (Simulated Dual Channel via one socket or two? Let's keep Unix simple with one for now, or just use 2 paths)
-        # Actually, Unix sockets are non-blocking friendly. Let's start with Windows fix.
-        # To keep it symmetric, we will pass ONE path index, but append suffixes in implementation.
+        # Windows Handles (Fallback)
+        self._win_in_handle = None
+        self._win_out_handle = None
+
+        # Unix Sockets (Fallback)
         self._sock = None
 
         self.is_windows = sys.platform == "win32"
 
     def listen(self):
         uid = str(uuid.uuid4())
+
+        if self._native:
+            try:
+                self.pipe_path_base = self._native.listen(uid)
+                self.listening_event.set()
+                logger.info(f"Mojo IPC (Native) listening on: {self.pipe_path_base}")
+                self._native.wait_for_connection()
+                self.connected = True
+                logger.info("Mojo Shell connected via Native Pipes")
+                return
+            except Exception as e:
+                logger.warning(
+                    f"Native IPC failed to listen ({e}), falling back to ctypes."
+                )
 
         if self.is_windows:
             self._listen_windows(uid)
@@ -146,6 +171,20 @@ class ChromeIPCServer:
         logger.info(f"Mojo Shell connected from {addr}")
 
     def read_loop(self, callback):
+        if self._native:
+            try:
+                # The native read loop runs in its own thread and calls back to Python
+                self._native.start_read_loop(callback)
+                # We need to block here like the original read_loop did, to keep the thread alive
+                # or until disconnect.
+                while self.connected:
+                    threading.Event().wait(1.0)
+                return
+            except Exception as e:
+                logger.error(f"Native IPC Read Loop Error: {e}")
+                self.connected = False
+                return
+
         while self.connected:
             try:
                 # 1. Read 4-byte Header
@@ -216,6 +255,11 @@ class ChromeIPCServer:
         with self._lock:
             try:
                 body_str = json.dumps(data_dict)
+
+                if self._native:
+                    self._native.send(body_str)
+                    return
+
                 body = body_str.encode("utf-8")
                 header = struct.pack("<I", len(body))
                 full_msg = header + body
@@ -234,7 +278,8 @@ class ChromeIPCServer:
                     self.conn.sendall(full_msg)
 
             except Exception as e:
-                logger.error(f"IPC Send Error: {e}")
+                if self.connected:
+                    logger.error(f"IPC Send Error: {e}")
                 self.connected = False
 
 
@@ -270,11 +315,15 @@ class ChromeAdapter:
             self.ipc.pipe_path_base if self.ipc.is_windows else self.ipc.pipe_path_base
         )
 
+        # Use explicit CWD from config if available (set by Engine calculation)
+        # otherwise fall back to process CWD.
+        pytron_root = self.config.get("cwd", os.getcwd())
+
         cmd = [
             self.binary_path,
             app_path,
             f"--pytron-pipe={pipe_arg}",
-            f"--pytron-root={os.getcwd()}",
+            f"--pytron-root={pytron_root}",
         ]
 
         # Force software rendering if needed (optional, good for VM stability)
@@ -284,12 +333,20 @@ class ChromeAdapter:
         if self.config.get("debug"):
             cmd.append("--inspect")
 
+        # FIX: Set the subprocess CWD to the Project Root (pytron_root)
+        # instead of the Shell Binary Directory.
+        # This ensures process.cwd() in Electron matches the Project Root,
+        # which is critical for 'pytron://' protocol resolution if the flag is ignored.
+
+        # Ensure we don't break binary loading, though.
+        # binary_path is abs path, and app_path is abs path. Should be fine.
+
         logger.info(f"Spawning Mojo Process (IPC): {' '.join(cmd)}")
         self.process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd=os.path.dirname(self.binary_path),
+            cwd=pytron_root,
             text=True,
             bufsize=1,
         )
@@ -358,6 +415,13 @@ class ChromeAdapter:
             logger.info(f"Flush complete. Sent {flushed}/{count} messages.")
 
     def _on_message(self, msg):
+        if isinstance(msg, str):
+            try:
+                msg = json.loads(msg)
+            except Exception as e:
+                logger.error(f"Failed to parse native IPC message: {e}")
+                return
+
         msg_type = msg.get("type")
         payload = msg.get("payload")
         logger.debug(f"Mojo Received: {msg_type} -> {payload}")

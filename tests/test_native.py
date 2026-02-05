@@ -20,14 +20,15 @@ def test_set_start_on_boot_windows(app):
     with patch("sys.platform", "win32"):
         with patch("platform.system", return_value="Windows"):
             with patch("pytron.platforms.windows.WindowsImplementation") as MockWin:
-                mock_impl = MockWin.return_value
+                with patch("sys.frozen", True, create=True):
+                    mock_impl = MockWin.return_value
 
-                app.set_start_on_boot(True)
+                    app.set_start_on_boot(True)
 
-                mock_impl.set_launch_on_boot.assert_called()
-                args = mock_impl.set_launch_on_boot.call_args[0]
-                assert args[0] == "Test_App"  # Safe name
-                assert args[2] is True  # Enable
+                    mock_impl.set_launch_on_boot.assert_called()
+                    args = mock_impl.set_launch_on_boot.call_args[0]
+                    assert args[0] == "Test_App"  # Safe name
+                    assert args[2] is True  # Enable
 
 
 def test_set_start_on_boot_via_window(app):
@@ -35,7 +36,8 @@ def test_set_start_on_boot_via_window(app):
     mock_window = MagicMock()
     app.windows.append(mock_window)
 
-    app.set_start_on_boot(False)
+    with patch("sys.frozen", True, create=True):
+        app.set_start_on_boot(False)
 
     mock_window._platform.set_launch_on_boot.assert_called()
     args = mock_window._platform.set_launch_on_boot.call_args[0]

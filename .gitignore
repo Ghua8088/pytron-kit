@@ -28,6 +28,7 @@ venv/
 env/
 ENV/
 tools/
+*.tex
 # Pytron Generated
 dist/
 # This is where 'pytron android init' creates the project locally for testing

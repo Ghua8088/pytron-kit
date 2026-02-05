@@ -14,6 +14,7 @@ from .helpers import (
     get_python_executable,
     get_venv_site_packages,
 )
+from .utils import resolve_package_metadata
 from ..pack.assets import get_smart_assets
 from ..pack.installers import build_installer
 from ..pack.utils import cleanup_dist
@@ -99,300 +100,129 @@ def cmd_package(args: argparse.Namespace) -> int:
             log(f"App packaged successfully: dist/{out_name}", style="bold green")
         return ret_code
 
-    out_name = args.name
-    if not out_name:
-        # Try to get name from settings.json
-        try:
-            settings_path = script.parent / "settings.json"
-            if settings_path.exists():
-                settings = json.loads(settings_path.read_text())
-                title = settings.get("title")
-                if title:
-                    # Sanitize title to be a valid filename
-                    # Replace non-alphanumeric (except - and _) with _
-                    out_name = "".join(
-                        c if c.isalnum() or c in ("-", "_") else "_" for c in title
-                    )
-                    # Remove duplicate underscores and strip
-                    while "__" in out_name:
-                        out_name = out_name.replace("__", "_")
-                    out_name = out_name.strip("_")
-        except Exception:
-            pass
+    # Resolve output name and load settings
+    out_name, settings = resolve_package_metadata(script, args.name)
 
-    if not out_name:
-        out_name = script.stem
-
-    # Ensure pytron is found by PyInstaller
-    import pytron
-
-    # Dynamically find where pytron is installed on the user's system
-    if pytron.__file__ is None:
-        log("Error: Cannot determine pytron installation location.", style="error")
-        log(
-            "This may happen if pytron is installed as a namespace package.",
-            style="error",
-        )
-        log(
-            "Try reinstalling pytron: pip install --force-reinstall pytron",
-            style="error",
-        )
-        progress.stop()
-        return 1
-    package_dir = Path(pytron.__file__).resolve().parent.parent
-
-    # Icon handling
-    app_icon = args.icon
-
-    # Re-load settings safely just in case scope is an issue or to be clean
-    settings = {}
-    try:
-        settings_path = script.parent / "settings.json"
-        if settings_path.exists():
-            settings = json.loads(settings_path.read_text())
-    except Exception:
-        pass
-
-    if not app_icon:
-        config_icon = settings.get("icon")
-        if config_icon:
-            possible_icon = script.parent / config_icon
-            if possible_icon.exists():
-                # Check extension
-                if possible_icon.suffix.lower() == ".png":
-                    # Try to convert to .ico
-                    try:
-                        from PIL import Image
-
-                        log(
-                            f"Converting {possible_icon.name} to .ico for packaging...",
-                            style="dim",
-                        )
-                        img = Image.open(possible_icon)
-                        ico_path = possible_icon.with_suffix(".ico")
-                        img.save(
-                            ico_path,
-                            format="ICO",
-                            sizes=[
-                                (256, 256),
-                                (128, 128),
-                                (64, 64),
-                                (48, 48),
-                                (32, 32),
-                                (16, 16),
-                            ],
-                        )
-                        app_icon = str(ico_path)
-                    except ImportError:
-                        log(
-                            "Warning: Icon is .png but Pillow is not installed. Cannot convert to .ico.",
-                            style="warning",
-                        )
-                        log(
-                            "Install Pillow (pip install Pillow) or provide an .ico file.",
-                            style="warning",
-                        )
-                    except Exception as e:
-                        log(
-                            f"Warning: Failed to convert .png to .ico: {e}",
-                            style="warning",
-                        )
-                elif possible_icon.suffix.lower() == ".ico":
-                    app_icon = str(possible_icon)
-                else:
-                    log(
-                        f"Warning: Icon file must be .ico (or .png with Pillow installed). Ignoring {possible_icon.name}",
-                        style="warning",
-                    )
-
-    # Fallback to Pytron icon
-    pytron_v_icon = Path(pytron.__file__).resolve().parent / "installer" / "pytron.ico"
-    if not app_icon and pytron_v_icon.exists():
-        app_icon = str(pytron_v_icon)
-
-    # Manifest support: prefer passing a manifest on the PyInstaller CLI
-    manifest_path = None
-    possible_manifest = (
-        Path(package_dir) / "pytron" / "manifests" / "windows-utf8.manifest"
+    # --- Modular Build Pipeline ---
+    from ..pack.pipeline import BuildContext, Pipeline
+    from ..pack.modules import (
+        AssetModule,
+        EngineModule,
+        MetadataModule,
+        InstallerModule,
+        PluginModule,
+        HookModule,
+        IconModule,
     )
-    if possible_manifest.exists():
-        manifest_path = possible_manifest.resolve()
-        log(f"Found Windows UTF-8 manifest: {manifest_path}", style="dim")
 
-    # --- Plugin Build Hooks ---
-    package_context = {
-        "add_data": args.add_data or [],
-        "hidden_imports": [],
-        "binaries": [],
-        "extra_args": [],
-        "script": script,
-        "out_name": out_name,
-        "settings": settings,
-        "package_dir": package_dir,
-        "app_icon": app_icon,
-    }
+    # Initialize Context
+    ctx = BuildContext(
+        script=script,
+        out_name=out_name,
+        app_icon=args.icon,
+        settings=settings,
+        engine=args.engine or ("chrome" if args.chrome else None),
+        is_secure=args.secure,
+        is_nuitka=args.nuitka,
+        is_onefile=args.one_file,
+        progress=progress,
+        task_id=task,
+    )
 
-    # Discover and run Plugin on_package hooks
-    from ..plugin import discover_plugins
+    # Pass through some CLI flags to context for module use
+    ctx.smart_assets = args.smart_assets
+    ctx.build_installer = args.installer
+    ctx.bundled = args.bundled
+    ctx.collect_all = getattr(args, "collect_all", False)
+    ctx.force_hooks = getattr(args, "force_hooks", False)
+    ctx.add_data = args.add_data or []
 
-    plugins_dir = script.parent / "plugins"
-    if plugins_dir.exists():
-        log("Evaluating plugins for packaging hooks...", style="dim")
-        plugin_objs = discover_plugins(str(plugins_dir))
+    # --- Crystal Integrity Check ---
+    if getattr(args, "crystal", False):
+        from ..pack.crystal import AppAuditor
 
-        # Robust mock app for hook context
-        class PackageAppMock:
-            class MockState:
-                def __getattr__(self, name):
-                    return None
+        auditor = AppAuditor(script)
+        log(f"Running Crystal Integrity Check on {script}...", style="cyan")
 
-                def __setattr__(self, name, value):
-                    pass
+        # Run the audit (this generates requirements.lock.json)
+        manifest = auditor.run_audit()
 
-            def __init__(self, settings_data, folder):
-                self.config = settings_data
-                self.app_root = folder
-                self.storage_path = str(folder / "build" / "storage")
-                self.logger = log
-                self.state = self.MockState()
+        if manifest:
+            # Inject discovered modules as hidden imports for the builder
+            discovered_modules = manifest.get("modules", [])
+            log(
+                f"Crystal detected {len(discovered_modules)} hidden dependencies.",
+                style="green",
+            )
 
-            def expose(self, *args, **kwargs):
-                pass
+            current_hidden = settings.get("hidden_imports", [])
+            # Merge unique items
+            settings["hidden_imports"] = list(set(current_hidden + discovered_modules))
 
-            def broadcast(self, *args, **kwargs):
-                pass
+            # Also ensure data files are tracked if needed (future expansion)
+            # data_files = manifest.get("files", [])
 
-            def publish(self, *args, **kwargs):
-                pass
+    # Initialize Pipeline
+    pipeline = Pipeline(ctx)
 
-            def on_exit(self, func):
-                return func
+    # Add Modules
+    pipeline.add_module(IconModule())
+    pipeline.add_module(AssetModule())
+    pipeline.add_module(HookModule())
+    pipeline.add_module(EngineModule())
+    pipeline.add_module(
+        PluginModule()
+    )  # Important: Plugin module handles custom add_data
 
-        mock_app = PackageAppMock(settings, script.parent)
+    if args.secure and ctx.engine != "rust":
+        from ..pack.secure import SecurityModule
 
-        for p in plugin_objs:
-            try:
-                # We perform a minimal load
-                p.load(mock_app)
-                p.invoke_package_hook(package_context)
-            except Exception as e:
-                log(
-                    f"Warning: Build hook for plugin '{p.name}' skipped: {e}",
-                    style="warning",
+        pipeline.add_module(SecurityModule())
+
+    if args.fortress:
+        try:
+            from fortress import FortressModule
+
+            pipeline.add_module(
+                FortressModule(
+                    use_cython=not args.no_cython,
+                    use_optimization=not args.no_shake,
+                    patch_from=args.patch_from,
                 )
+            )
+            log("Fortress Architecture enabled.", style="cyan")
+        except ImportError:
+            log(
+                "Error: 'pytron-fortress' package not found. Run 'pip install -e pytron-suite/fortress' to use this feature.",
+                style="error",
+            )
+            return 1
 
-        # Sync back modified values from plugins (Shenanigans support)
-        out_name = package_context["out_name"]
-        app_icon = package_context["app_icon"]
-        settings = package_context["settings"]
-        log(f"Build context updated by plugins (Name: {out_name})", style="dim")
+    pipeline.add_module(MetadataModule())
+    pipeline.add_module(InstallerModule())
 
-    progress.update(task, description="Gathering Assets...", completed=20)
+    # Run Pipeline with Core Compiler
+    if ctx.engine == "rust":
+        from ..pack.rust_engine import RustEngine
 
-    # Auto-detect and include assets (settings.json + frontend build)
-    add_data = package_context["add_data"]
+        rust_engine = RustEngine()
+        # Rust Engine handles the entire build process natively
+        ret_code = pipeline.run(rust_engine.build)
 
-    # Automatically include the icon file in the build output
-    # This ensures tray icons (which load from file) work in packaged builds
-    if app_icon and os.path.exists(app_icon):
-        add_data.append(f"{app_icon}{os.pathsep}.")
-        log(f"Auto-including icon file: {Path(app_icon).name}", style="dim")
+    elif args.nuitka:
+        from ..pack.nuitka import run_nuitka_build
 
-    script_dir = script.parent
+        # TODO: Refactor Nuitka to use BuildContext too for full parity
+        # For now, we'll call it with a compatible shim if possible or just original args
+        # But let's prioritize PyInstaller for this refactor
+        ret_code = pipeline.run(run_nuitka_build)
+    else:
+        from ..pack.pyinstaller import run_pyinstaller_build
 
-    # 1. settings.json (Sanitized for Production)
-    settings_path = script_dir / "settings.json"
-    if settings_path.exists():
-        try:
-            # Ensure build directory exists
-            build_dir = script_dir / "build"
-            build_dir.mkdir(parents=True, exist_ok=True)
+        ret_code = pipeline.run(run_pyinstaller_build)
 
-            # Force debug=False for production
-            if settings.get("debug") is True:
-                log("Auto-disabling 'debug' mode for production build.", style="dim")
-                settings["debug"] = False
-
-            # Write sanitized settings to temp location
-            temp_settings_path = build_dir / "settings.json"
-            temp_settings_path.write_text(json.dumps(settings, indent=4))
-
-            # Include the sanitized file, placing it at root (.)
-            add_data.append(f"{temp_settings_path}{os.pathsep}.")
-            log("Auto-including settings.json (optimized)", style="dim")
-        except Exception as e:
-            # Fallback to original if something fails
-            log(f"Warning optimizing settings.json: {e}", style="warning")
-            add_data.append(f"{settings_path}{os.pathsep}.")
-
-    # 2. Frontend assets
-    frontend_dist = None
-    possible_dists = [
-        script_dir / "frontend" / "dist",
-        script_dir / "frontend" / "build",
-    ]
-    for d in possible_dists:
-        if d.exists() and d.is_dir():
-            frontend_dist = d
-            break
-
-    if frontend_dist:
-        rel_path = frontend_dist.relative_to(script_dir)
-        add_data.append(f"{frontend_dist}{os.pathsep}{rel_path}")
-        log(f"Auto-including frontend assets from {rel_path}", style="dim")
-
-    use_smart_assets = getattr(args, "smart_assets", False)
-
-    if use_smart_assets:
-        try:
-            smart_assets = get_smart_assets(script_dir, frontend_dist=frontend_dist)
-            if smart_assets:
-                add_data.extend(smart_assets)
-        except Exception as e:
-            log(f"Warning: failed to auto-include project assets: {e}", style="warning")
-
-    # --- Nuitka Compilation Logic ---
-    if getattr(args, "nuitka", False):
-        return run_nuitka_build(
-            args,
-            script,
-            out_name,
-            settings,
-            app_icon,
-            package_dir,
-            add_data,
-            frontend_dist,
-            progress,
-            task,
-            package_context=package_context,
-        )
-
-    # --- Rust Bootloader (Secure) Logic ---
-    if getattr(args, "secure", False):
-        return run_secure_build(
-            args,
-            script,
-            out_name,
-            settings,
-            app_icon,
-            package_dir,
-            add_data,
-            progress,
-            task,
-            package_context=package_context,
-        )
-
-    # --- PyInstaller Compilation Logic ---
-    return run_pyinstaller_build(
-        args,
-        script,
-        out_name,
-        settings,
-        app_icon,
-        package_dir,
-        add_data,
-        manifest_path,
-        progress,
-        task,
-        package_context=package_context,
-    )
+    progress.stop()
+    if ret_code == 0:
+        console.print(Rule("[bold green]Success"))
+        log(f"App packaged successfully: dist/{ctx.out_name}", style="bold green")
+    return ret_code

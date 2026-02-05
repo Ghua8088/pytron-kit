@@ -231,6 +231,18 @@ def _prepare_ofn(w, title, default_path, file_types, file_buffer_size=1024):
     if not file_types:
         file_types = "All Files (*.*)|*.*"
 
+    if isinstance(file_types, (list, tuple)):
+        # Convert list of tuples [("Name", "*.ext"), ...] to "Name|*.ext|..."
+        # Or if it's a list of strings ["Name|*.ext", ...], just join them.
+        ft_parts = []
+        for ft in file_types:
+            if isinstance(ft, (list, tuple)) and len(ft) >= 2:
+                # Ensure the description doesn't contain pipes, though patterns might
+                ft_parts.append(f"{ft[0]}|{ft[1]}")
+            else:
+                ft_parts.append(str(ft))
+        file_types = "|".join(ft_parts)
+
     filter_str = file_types.replace("|", "\0") + "\0"
     ofn.lpstrFilter = filter_str
 

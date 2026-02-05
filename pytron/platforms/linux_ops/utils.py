@@ -1,10 +1,14 @@
-from ...bindings import lib
 from . import libs
 import ctypes
 
+# In Native Engine architecture, 'w' is passed as the HWND/XID integer directly.
+
 
 def get_window(w):
-    return lib.webview_get_window(w)
+    return w
+
+
+get_hwnd = get_window
 
 
 def get_child_webview(win_ptr):

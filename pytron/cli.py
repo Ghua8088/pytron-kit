@@ -24,6 +24,7 @@ from .commands.android import cmd_android
 from .commands.engine import cmd_engine
 from .commands.doctor import cmd_doctor
 from .commands.workflow import cmd_workflow
+from .commands.scan import cmd_scan
 from .console import log
 
 
@@ -108,6 +109,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_doctor.set_defaults(func=cmd_doctor)
 
+    p_scan = sub.add_parser(
+        "scan", help="Analyze dependency graph with ML Oracle", parents=[base_parser]
+    )
+    p_scan.add_argument("target", nargs="?", help="Target directory (default: current)")
+    p_scan.add_argument("--json", action="store_true", help="Dump graph to JSON")
+    p_scan.add_argument(
+        "--html", action="store_true", help="Generate interactive HTML graph"
+    )
+    p_scan.add_argument(
+        "--verbose", action="store_true", help="Show raw uncertainty zones"
+    )
+    p_scan.set_defaults(func=cmd_scan)
+
     p_frontend = sub.add_parser(
         "frontend",
         help="Frontend commands proxy (runs '<provider> <args>' in the frontend folder)",
@@ -160,56 +174,98 @@ def build_parser() -> argparse.ArgumentParser:
     p_pkg.add_argument(
         "script", nargs="?", help="Python entrypoint to package (default: app.py)"
     )
-    p_pkg.add_argument("--name", help="Output executable name")
-    p_pkg.add_argument("--icon", help="Path to app icon (.ico)")
-    p_pkg.add_argument(
+
+    # General Options
+    grp_general = p_pkg.add_argument_group("General Options")
+    grp_general.add_argument("--name", help="Output executable name")
+    grp_general.add_argument("--icon", help="Path to app icon (.ico)")
+    grp_general.add_argument(
         "--console", action="store_true", help="Show console window (debug mode)"
     )
-    p_pkg.add_argument(
+    grp_general.add_argument(
         "--add-data", nargs="*", help="Additional data to include (format: src;dest)"
     )
-    p_pkg.add_argument(
+    grp_general.add_argument(
         "--installer", action="store_true", help="Build NSIS installer after packaging"
     )
-    p_pkg.add_argument(
-        "--collect-all",
-        action="store_true",
-        help='Generate full "collect_all" hooks (larger builds).',
-    )
-    p_pkg.add_argument(
-        "--force-hooks",
-        action="store_true",
-        help="Force generation of hooks using collect_submodules (smaller hooks).",
-    )
-    p_pkg.add_argument(
+    grp_general.add_argument(
         "--smart-assets",
         action="store_true",
         help="Enable auto-inclusion of smart assets (non-code files).",
     )
-    p_pkg.add_argument("--engine", help="Browser engine to use (native)")
-    p_pkg.add_argument(
+
+    # Engine Options
+    grp_engine = p_pkg.add_argument_group("Engine Options")
+    grp_engine.add_argument("--engine", help="Browser engine to use (native)")
+    grp_engine.add_argument(
         "--chrome", action="store_true", help="Shortcut for --engine chrome"
     )
-    p_pkg.add_argument(
-        "--no-shake",
+
+    # Build Strategy
+    grp_build = p_pkg.add_argument_group("Build Strategy")
+    grp_build.add_argument(
+        "--one-file",
         action="store_true",
-        help="Disable post-build optimization (Tree Shaking).",
+        help="Package into a single executable file (default for Nuitka)",
     )
-    p_pkg.add_argument(
+    grp_build.add_argument(
+        "--one-dir",
+        action="store_true",
+        help="Package into a directory (default for PyInstaller, faster build)",
+    )
+    grp_build.add_argument(
         "--nuitka",
         action="store_true",
         help="Use Nuitka compiler instead of PyInstaller (Advanced, secure)",
     )
-    p_pkg.add_argument(
+    grp_build.add_argument(
+        "--bundled",
+        action="store_true",
+        help="Enable grouping of library modules into app.bundle (Cleaner dist)",
+    )
+    grp_build.add_argument(
+        "--no-shake",
+        action="store_true",
+        help="Disable post-build optimization (Tree Shaking).",
+    )
+
+    # Hook Generation
+    grp_hooks = p_pkg.add_argument_group("Hook Generation")
+    grp_hooks.add_argument(
+        "--collect-all",
+        action="store_true",
+        help='Generate full "collect_all" hooks (larger builds).',
+    )
+    grp_hooks.add_argument(
+        "--force-hooks",
+        action="store_true",
+        help="Force generation of hooks using collect_submodules.",
+    )
+
+    # Security (Fortress/Rust)
+    grp_sec = p_pkg.add_argument_group("Security & Hardening")
+    grp_sec.add_argument(
         "--secure",
         action="store_true",
-        help="Enable Rust Bootloader (Protects source logic + Passive Evolution)",
+        help="Enable Rust Bootloader (Protects source logic)",
     )
-    p_pkg.add_argument(
+    grp_sec.add_argument(
+        "--fortress",
+        action="store_true",
+        help="Enable Fortress Architecture (Hardened Core + Static Shield)",
+    )
+    grp_sec.add_argument(
+        "--no-cython",
+        action="store_true",
+        help="Disable Cythonization during Fortress build.",
+    )
+    grp_sec.add_argument(
         "--patch-from",
         help="Generate a binary patch against a previous app.pytron payload",
     )
+
     p_pkg.set_defaults(func=cmd_package)
+
     p_build = sub.add_parser(
         "build-frontend",
         help="Run frontend build in a frontend folder",

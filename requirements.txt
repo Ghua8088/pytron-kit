@@ -9,3 +9,4 @@ PyGObject==3.54.5; sys_platform == 'linux'
 comtypes; sys_platform == 'win32'
 keyring
 requests
+    

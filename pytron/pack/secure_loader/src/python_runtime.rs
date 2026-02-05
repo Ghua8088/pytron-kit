@@ -2,8 +2,6 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::fs;
-use crate::security::decrypt_payload;
 
 pub fn find_internal_dir() -> (PathBuf, PathBuf) {
     let exe_path = env::current_exe().unwrap_or_else(|_| PathBuf::from("app.exe"));
@@ -17,7 +15,7 @@ pub fn find_internal_dir() -> (PathBuf, PathBuf) {
     }
 }
 
-pub fn run_python_and_payload(root_dir: &Path, internal_dir: &Path, base_zip: &Path) -> PyResult<()> {
+pub fn run_python_and_payload(root_dir: &Path, internal_dir: &Path, _base_zip: Option<&Path>) -> PyResult<()> {
     pyo3::prepare_freethreaded_python();
 
     let exe_path = env::current_exe().map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("EXE check failed: {}", e)))?;
@@ -27,6 +25,7 @@ pub fn run_python_and_payload(root_dir: &Path, internal_dir: &Path, base_zip: &P
         let os = py.import_bound("os")?;
 
         sys.setattr("frozen", true)?;
+        // CRITICAL: Point _MEIPASS to internal_dir so settings.json/assets are found
         sys.setattr("_MEIPASS", internal_dir.to_string_lossy())?;
         sys.setattr("executable", exe_path.to_string_lossy())?;
 
@@ -38,14 +37,25 @@ pub fn run_python_and_payload(root_dir: &Path, internal_dir: &Path, base_zip: &P
         }
 
         let path_list: Bound<PyList> = sys.getattr("path")?.extract()?;
-        let base_str = base_zip.to_string_lossy();
         let int_str = internal_dir.to_string_lossy();
+        let root_str = root_dir.to_string_lossy();
         
-        if !path_list.contains(&base_str)? {
-            path_list.insert(0, base_str)?;
+        // Add paths for module discovery
+        let mut current_idx = 0;
+        if let Some(bundle) = _base_zip {
+            let bundle_str = bundle.to_string_lossy();
+            if !path_list.contains(&bundle_str)? {
+                path_list.insert(current_idx, bundle_str)?;
+                current_idx += 1;
+            }
         }
+
         if !path_list.contains(&int_str)? {
-            path_list.insert(1, int_str)?;
+            path_list.insert(current_idx, int_str)?;
+            current_idx += 1;
+        }
+        if !path_list.contains(&root_str)? {
+            path_list.insert(current_idx, root_str)?;
         }
 
         // --- CLI Argument Forwarding ---
@@ -53,34 +63,22 @@ pub fn run_python_and_payload(root_dir: &Path, internal_dir: &Path, base_zip: &P
         let py_args = PyList::new_bound(py, &args);
         sys.setattr("argv", py_args)?;
 
-        // Load and decrypt payload from the verified root directory
-        let payload_path = root_dir.join("app.pytron");
-
-        let encrypted_data = fs::read(&payload_path)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("Failed to read app.pytron at {:?}: {}", payload_path, e)))?;
-        
-        match decrypt_payload(&encrypted_data) {
-            Ok(decrypted_bytes) => {
-                let decrypted_code = String::from_utf8(decrypted_bytes).map_err(|e| 
-                    PyErr::new::<pyo3::exceptions::PyUnicodeDecodeError, _>(format!("Invalid UTF-8 in payload: {}", e))
-                )?;
-                
-                let namespace = pyo3::types::PyDict::new_bound(py);
-                namespace.set_item("__name__", "__main__")?;
-                namespace.set_item("__file__", payload_path.to_string_lossy())?;
-                
-                let builtins = py.import_bound("builtins")?;
-                namespace.set_item("__builtins__", builtins)?;
-
-                py.run_bound(&decrypted_code, Some(&namespace), Some(&namespace))?;
-            },
+        // Load the compiled binary module 'app'
+        // Cythonized modules execute their patched 'if True:' block upon import
+        match py.import_bound("app") {
+            Ok(_) => Ok(()),
             Err(e) => {
-                return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                    format!("Integrity Violation: {} (Key may be mismatched)", e)
-                ));
+                let tb = py.import_bound("traceback")?;
+                let tb_list = tb.call_method1("format_exception", (e.clone_ref(py),))?;
+                
+                // Use "".join() to convert the list of lines into one string
+                let empty_str = pyo3::types::PyString::new_bound(py, "");
+                let formatted_tb: String = empty_str.call_method1("join", (tb_list,))?.extract()?;
+                
+                Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                    format!("Shield Error: Failed to start native logic\n\n{}", formatted_tb)
+                ))
             }
         }
-        
-        Ok(())
     })
 }

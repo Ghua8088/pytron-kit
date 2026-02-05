@@ -163,7 +163,7 @@ def run_dev_mode(script: Path, extra_args: list[str], engine: str = None) -> int
 
                 # Wait for a bit to find the URL
                 print(f"[Pytron] Waiting for {provider} dev server to start...")
-                url_found_event.wait(timeout=10)
+                url_found_event.wait(timeout=30)
 
                 if not dev_server_url:
                     log(

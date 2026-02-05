@@ -1,0 +1,48 @@
+name: Package App (Windows)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Windows Application
+    runs-on: windows-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Pytron & Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install . 
+          pytron install
+
+      - name: Build Native Engine
+        run: python pytron/engines/native/build.py
+
+      - name: Build and Package
+        # We use --secure for Rust bootloader and --installer for NSIS setup
+        run: pytron package app.py --smart-assets --secure --installer
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytron-windows-build
+          path: dist/

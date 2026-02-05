@@ -4,7 +4,7 @@ include pyproject.toml
 
 # 1. Include the core package
 recursive-include pytron *.py *.png *.ico *.exe *.md *.dll *.so *.dylib *.lib
-recursive-include pytron/dependancies *
+recursive-include pytron/dependencies *
 
 # 2. Android Shell - The "Allow List"
 # We match specifically to avoid dragging in temp files
@@ -29,6 +29,7 @@ recursive-include pytron/platforms/android/shell/gradle/wrapper *
 prune pytron/pack/secure_loader/src
 exclude pytron/pack/secure_loader/Cargo.toml
 exclude pytron/pack/secure_loader/build_loader.py
+prune pytron/engines/native
 prune pytron/pack/secure_loader/target
 prune pytron/platforms/android/shell/app/build
 prune pytron/platforms/android/shell/.gradle

@@ -285,12 +285,12 @@ def sync_android_project(project_root: str, native: bool = False) -> None:
     if os.path.exists(target_pytron_dir):
         shutil.rmtree(target_pytron_dir)
 
-    # Ignore 'dependancies' (heavy dlls) and standard cruft
+    # Ignore 'dependencies' (heavy dlls) and standard cruft
     shutil.copytree(
         pytron_pkg_dir,
         target_pytron_dir,
         ignore=shutil.ignore_patterns(
-            "__pycache__", "*.pyc", "installer", "commands", "dependancies"
+            "__pycache__", "*.pyc", "installer", "commands", "dependencies"
         ),
     )
 

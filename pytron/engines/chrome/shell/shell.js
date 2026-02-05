@@ -13,21 +13,28 @@ protocol.registerSchemesAsPrivileged([
     { scheme: 'pytron', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true } }
 ]);
 
-// Robust Synchronous Logging
+// 16. Robust Synchronous Logging
+const isDebug = process.argv.includes('--pytron-debug') || process.argv.includes('--inspect');
+
 const log = (msg) => {
     const stamped = `[Mojo-Shell][${new Date().toISOString()}] ${msg}`;
     try {
         // Prepare logs dir if needed, or just stdout
         // fs.writeSync(1, stamped + "\n");
-    } catch (e) { }
-    console.log(stamped);
+        console.log(stamped);
+    } catch (e) {
+        // Silent catch for EPIPE (Broken Pipe) or other stdout issues during shutdown
+    }
 };
 
 log("--- MOJO SHELL BOOTING V7 (UNRESTRICTED) ---");
 
 // Determine Root
 const rootArg = process.argv.find(arg => arg.startsWith('--pytron-root='));
-const PROJECT_ROOT = rootArg ? rootArg.split('=')[1] : null;
+let PROJECT_ROOT = rootArg ? rootArg.split('=')[1] : null;
+if (PROJECT_ROOT && PROJECT_ROOT.startsWith('"') && PROJECT_ROOT.endsWith('"')) {
+    PROJECT_ROOT = PROJECT_ROOT.substring(1, PROJECT_ROOT.length - 1);
+}
 
 // Helper for MIME types
 function getMimeType(filename) {
@@ -200,7 +207,7 @@ function sendToPython(type, payload) {
 }
 
 function handlePythonCommand(cmd) {
-    log(`Executing: ${cmd.substring(0, 100)}...`);
+    if (isDebug) log(`Executing: ${cmd.substring(0, 100)}...`);
 
     if (!isAppReady) {
         log("Queueing command (App not ready)");
@@ -212,6 +219,10 @@ function handlePythonCommand(cmd) {
         const command = JSON.parse(cmd);
         switch (command.action) {
             case 'init':
+                if (command.options && command.options.root) {
+                    PROJECT_ROOT = command.options.root;
+                    log(`Updating PROJECT_ROOT to: ${PROJECT_ROOT}`);
+                }
                 createWindow(command.options);
                 break;
             case 'init_script':
@@ -277,7 +288,11 @@ function handlePythonCommand(cmd) {
                         return new Promise((resolve, reject) => {
                             window._pytron_promises = window._pytron_promises || {};
                             window._pytron_promises[seq] = { resolve, reject };
-                            window.pytron.emit("${command.name}", { data: args, id: seq });
+                            if (window.__pytron_native_bridge) {
+                                window.__pytron_native_bridge.emit("${command.name}", { data: args, id: seq });
+                            } else if (window.pytron && window.pytron.emit) {
+                                window.pytron.emit("${command.name}", { data: args, id: seq });
+                            }
                         });
                     };
                 `;
@@ -331,7 +346,7 @@ async function createWindow(options = {}) {
     }
 
     // Enhanced Window Configuration
-    config.resizable = options.resizable !== undefined ? options.resizable : true;
+    config.resizable = options.resizable !== undefined ? !!options.resizable : true;
     config.alwaysOnTop = !!options.always_on_top;
     config.fullscreen = !!options.fullscreen;
 
@@ -350,21 +365,16 @@ async function createWindow(options = {}) {
     // Transparent
     if (options.transparent) {
         config.transparent = true;
-        // Transparency usually requires frameless to look right, but we 'll let the user decide frameless separately
-        // However, on Windows, transparency + frame can be buggy.
     }
 
-    // Pruned: Remove Frame by default if requested or generally if emulating a raw view
-    // Ensure we respect the user's explicit config from Python
+    // Robust Frameless with Snapping (Windows-first logic)
     if (options.frameless) {
         config.frame = false;
+        // On macOS/Windows, 'hidden' allows the OS to still handle snapping/resize margins 
+        // while the titlebar stays invisible.
         config.titleBarStyle = 'hidden';
     }
 
-    // DEBUG: Force show
-    // if (options.start_hidden) {
-    //    config.show = false;
-    // }
     config.show = false; // Always start false, show on ready
 
     mainWindow = new BrowserWindow(config);
@@ -386,9 +396,16 @@ async function createWindow(options = {}) {
     // Simple Pruned Webview: Remove Menu
     mainWindow.setMenu(null);
 
-    // External Links: Open in Default Browser (Ditto webview behavior)
+    // External Links: Open in Default Browser (Maintain "Application" vibe)
+    mainWindow.webContents.on('will-navigate', (event, url) => {
+        if (!url.startsWith('pytron://') && !url.startsWith('https://pytron.') && url !== 'about:blank') {
+            event.preventDefault();
+            shell.openExternal(url);
+        }
+    });
+
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-        if (url.startsWith('https:') || url.startsWith('http:')) {
+        if (!url.startsWith('pytron://') && !url.startsWith('https://pytron.') && url !== 'about:blank') {
             shell.openExternal(url);
             return { action: 'deny' };
         }
@@ -475,17 +492,29 @@ if (!gotTheLock) {
                 return new Response("Project Root Not Set", { status: 500 });
             }
 
-            let filePath = path.join(PROJECT_ROOT, urlPath.replace('app/', ''));
-            // log(`[Protocol] Serving: ${filePath}`);
+            // Normalize urlPath: Remove leading 'app/' or '/'
+            let normalizedPath = urlPath;
+            if (normalizedPath.startsWith('app/')) {
+                normalizedPath = normalizedPath.substring(4);
+            } else if (normalizedPath.startsWith('/')) {
+                normalizedPath = normalizedPath.substring(1);
+            }
+
+            let filePath = path.join(PROJECT_ROOT, normalizedPath);
+            // log(`[Protocol] Request: ${request.url} -> ${filePath}`);
 
             try {
-                const data = fs.readFileSync(filePath);
-                return new Response(data, {
-                    headers: { 'content-type': getMimeType(filePath) }
-                });
+                if (fs.existsSync(filePath) && fs.lstatSync(filePath).isFile()) {
+                    const data = fs.readFileSync(filePath);
+                    return new Response(data, {
+                        headers: { 'content-type': getMimeType(filePath) }
+                    });
+                }
+                // log(`[Protocol] File Not Found: ${filePath}`);
+                return new Response("Not Found", { status: 404 });
             } catch (e) {
                 log(`[Protocol] Error serving ${urlPath}: ${e.message}`);
-                return new Response("Not Found", { status: 404 });
+                return new Response("Internal Error", { status: 500 });
             }
         };
 

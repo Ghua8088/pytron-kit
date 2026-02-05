@@ -8,20 +8,28 @@ from ..exceptions import ConfigError
 
 class ConfigMixin:
     def _setup_logging(self):
-        logging.basicConfig(
-            level=logging.INFO,
-            format="[Pytron] %(asctime)s - %(levelname)s - %(message)s",
-            datefmt="%H:%M:%S",
-        )
+        # If we use basicConfig, it might interfere with user's settings.
+        # But for a simple CLI tool, it's often preferred.
+        # Let's check if the root logger has any handlers already.
+        if not logging.root.handlers:
+            logging.basicConfig(
+                level=logging.INFO,
+                format="[Pytron] %(asctime)s - %(levelname)s - %(message)s",
+                datefmt="%H:%M:%S",
+            )
         self.logger = logging.getLogger("Pytron")
 
     def _check_deep_link(self):
         self.state.launch_url = None
-        if len(sys.argv) > 1:
-            possible_url = sys.argv[1]
-            if possible_url.startswith("pytron:") or "://" in possible_url:
-                self.logger.info(f"App launched via Deep Link: {possible_url}")
-                self.state.launch_url = possible_url
+        # Scan all args for a possible deep link (some OS pass it at different positions)
+        # or it might be preceded by flags.
+        for arg in sys.argv[1:]:
+            if arg.startswith("pytron:") or "://" in arg:
+                # Basic validation: ensure it's not a local file path with :// (unlikely on Win)
+                if ":" in arg and not os.path.exists(arg):
+                    self.logger.info(f"App launched via Deep Link: {arg}")
+                    self.state.launch_url = arg
+                    break
                 # Defer dispatch to run-time if needed, but since plugins/handlers
                 # might be registered AFTER init, we might need to handle this carefully.
                 # However, for now, we'll store it. The handlers usually aren't registered
@@ -95,7 +103,7 @@ class ConfigMixin:
             )
         app_id = f"{author}.{safe_title}.App"
 
-        if sys.platform == "win32":
+        if sys.platform == "win32" and getattr(sys, "frozen", False):
             try:
                 from ..platforms.windows import WindowsImplementation
 
@@ -125,8 +133,8 @@ class ConfigMixin:
         import threading
         import os
 
-        # Skip during tests as they often create multiple app instances rapidly
-        if "PYTEST_CURRENT_TEST" in os.environ:
+        # Skip during tests and development as they often require flexibility
+        if "PYTEST_CURRENT_TEST" in os.environ or not getattr(sys, "frozen", False):
             return
 
         # Generate a stable port between 10000-60000 based on app_id
@@ -182,7 +190,12 @@ class ConfigMixin:
                 client.close()
             except Exception:
                 pass
-            sys.exit(0)
+            # Critical: Use os._exit(0) instead of sys.exit(0)
+            # sys.exit() raises SystemExit, which can be caught by the bootstrap wrapper
+            # or Cython, leading to a false positive "Shield Error".
+            # os._exit() terminates immediately at the OS level, which is safe here
+            # because we want to vanish instantly after forwarding the intent.
+            os._exit(0)
 
     def _setup_storage(self, safe_title):
         if sys.platform == "win32":
@@ -212,8 +225,13 @@ class ConfigMixin:
 
         try:
             os.makedirs(self.storage_path, exist_ok=True)
-            os.chdir(self.storage_path)
-            self.logger.info(f"Changed Working Directory to: {self.storage_path}")
+            if getattr(sys, "frozen", False):
+                os.chdir(self.storage_path)
+                self.logger.info(f"Changed Working Directory to: {self.storage_path}")
+            else:
+                self.logger.debug(
+                    f"Dev Mode: Storage directory ready at {self.storage_path}"
+                )
         except Exception as e:
             self.logger.warning(
                 f"Could not create storage directory at {self.storage_path}: {e}"

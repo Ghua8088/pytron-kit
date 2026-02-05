@@ -100,6 +100,8 @@ def cmd_init(args: argparse.Namespace) -> int:
         "plugins_dir": None,
         "plugins": [],
         # Packaging & Build
+        "crystal_mode": False,  # High-Security Runtime Audit
+        "virtual_entry_point": False,  # Synthesized Entry Point Strategy
         "splash_image": None,
         "force-package": [],
         "include_patterns": [],
@@ -135,6 +137,11 @@ def cmd_init(args: argparse.Namespace) -> int:
                 runner = "bunx"
             elif provider == "pnpm":
                 runner = "pnpx"
+
+            # Resolve full path for Windows compatibility (npx.cmd)
+            runner_path = shutil.which(runner)
+            if runner_path:
+                runner = runner_path
 
             cmd = [
                 runner,
@@ -210,6 +217,10 @@ export default nextConfig;
         # that appear in newer versions (v6+).
         try:
             runner = get_frontend_runner(provider)
+            # Resolve full path for Windows compatibility
+            runner_path = shutil.which(runner)
+            if runner_path:
+                runner = runner_path
 
             ret = run_command_with_output(
                 [
@@ -267,8 +278,15 @@ export default nextConfig;
             progress.update(
                 task, description="Installing Dependencies...", completed=40
             )
+            # Resolve full path for Windows compatibility
+            provider_path = shutil.which(provider)
+            if provider_path:
+                provider_cmd = provider_path
+            else:
+                provider_cmd = provider
+
             ret = run_command_with_output(
-                [provider, "install"],
+                [provider_cmd, "install"],
                 cwd=str(target / "frontend"),
                 shell=False,
             )

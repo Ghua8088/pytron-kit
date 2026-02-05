@@ -91,15 +91,27 @@ class App(ConfigMixin, WindowMixin, ExtrasMixin, CodegenMixin, NativeMixin, Shel
 
         # AUTO-CODEGEN: Generate TypeScript definitions in debug mode
         if self.config.get("debug", False):
-            # Run codegen after a short delay to ensure discovery of all exposed functions
-            # In a real app, users usually call app.run() after exposing everything.
-            # But we can also trigger it manually or via a hook.
+            # We use a small delay via the event loop or just run it before start
+            # To ensure all plugins/modules have had a chance to .expose()
+            # But usually they do it during __init__ or before app.run()
+            # We'll attach it to a pre-run hook or just before the loop starts in WindowMixin.run
             pass
+
+        # Actually, let's trigger it once here for early feedback
+        if self.config.get("debug", False):
+            try:
+                self.generate_types()
+            except Exception as e:
+                self.logger.debug(f"Initial codegen skipped: {e}")
 
         # Load Plugins
         # We must use the script/exe directory (sys.path[0]), NOT cwd, because cwd changes to AppData
         if getattr(sys, "frozen", False):
-            base_dir = os.path.dirname(os.path.abspath(sys.executable))
+            # Senior Fix: Use sys._MEIPASS for internal assets/plugins in frozen builds.
+            # Fallback to sys.executable dir if _MEIPASS is somehow missing.
+            base_dir = getattr(
+                sys, "_MEIPASS", os.path.dirname(os.path.abspath(sys.executable))
+            )
         else:
             # Prefer the directory of the actual main script if possible
             main_script = (
@@ -118,16 +130,33 @@ class App(ConfigMixin, WindowMixin, ExtrasMixin, CodegenMixin, NativeMixin, Shel
 
         self.app_root = base_dir
 
-        plugins_dir = self.config.get("plugins_dir")
-        if plugins_dir:
-            # If relative, resolve against base_dir BEFORE we trust os.path.exists
-            if not os.path.isabs(plugins_dir):
-                plugins_dir = os.path.join(base_dir, plugins_dir)
-            self.load_plugins(plugins_dir)
+        # Plugin Discovery: Check both bundled (internal) and drop-in (external) paths
+        candidate_dirs = []
+        if getattr(sys, "frozen", False):
+            # 1. Bundled plugins inside _internal
+            if hasattr(sys, "_MEIPASS"):
+                candidate_dirs.append(os.path.join(sys._MEIPASS, "plugins"))
+            # 2. Drop-in plugins next to the EXE
+            exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+            candidate_dirs.append(os.path.join(exe_dir, "plugins"))
         else:
-            default_plugins = os.path.join(base_dir, "plugins")
-            if os.path.exists(default_plugins):
-                self.load_plugins(default_plugins)
+            # Local dev plugins next to the script
+            candidate_dirs.append(os.path.join(base_dir, "plugins"))
+
+        custom_plugins_dir = self.config.get("plugins_dir")
+        if custom_plugins_dir:
+            if not os.path.isabs(custom_plugins_dir):
+                custom_plugins_dir = os.path.join(base_dir, custom_plugins_dir)
+            candidate_dirs.append(custom_plugins_dir)
+
+        # Remove duplicates and resolve
+        seen = set()
+        for p_dir in candidate_dirs:
+            p_dir = os.path.abspath(p_dir)
+            if p_dir not in seen and os.path.exists(p_dir):
+                self.logger.info(f"Scanning for plugins in: {p_dir}")
+                self.load_plugins(p_dir)
+                seen.add(p_dir)
 
     def on_exit(self, func):
         """
@@ -445,3 +474,89 @@ class App(ConfigMixin, WindowMixin, ExtrasMixin, CodegenMixin, NativeMixin, Shel
             except Exception as e:
                 self.logger.error(f"Error unloading plugin {plugin.name}: {e}")
         self.plugins.clear()
+
+    def audit_dependencies(self):
+        """
+        Packaging Heuristic:
+        Traverses all exposed functions to find hidden dependencies (imports inside functions).
+        Triggers sys.audit('import') events for found modules so packaging tools can capture them.
+        """
+        import inspect
+        import dis
+        import sys
+
+        visited = set()
+
+        def _report(name, file=None):
+            if name:
+                sys.audit("import", name, file, None, None, None)
+
+        def _inspect(func, depth=0):
+            if depth > 5:
+                return
+            try:
+                if func in visited:
+                    return
+                visited.add(func)
+            except:
+                return
+
+            try:
+                # 1. Handle Classes/Instances (if stored directly)
+                if inspect.isclass(func) or (
+                    not callable(func) and hasattr(func, "__dict__")
+                ):
+                    if hasattr(func, "__module__") and func.__module__:
+                        _report(func.__module__)
+                    for attr_name in dir(func):
+                        if attr_name.startswith("_"):
+                            continue
+                        try:
+                            val = getattr(func, attr_name)
+                            if inspect.isfunction(val) or inspect.ismethod(val):
+                                _inspect(val, depth + 1)
+                        except:
+                            pass
+                    return
+
+                # Report the module of the function itself
+                if hasattr(func, "__module__") and func.__module__:
+                    _report(func.__module__)
+
+                # Check method self if applicable
+                if inspect.ismethod(func) and hasattr(func, "__self__"):
+                    if hasattr(func.__self__, "__module__"):
+                        _report(func.__self__.__module__)
+
+                # 2. Inspect closures and globals
+                closures = inspect.getclosurevars(func)
+
+                for name, value in closures.globals.items():
+                    if inspect.ismodule(value):
+                        _report(value.__name__, getattr(value, "__file__", None))
+                    elif hasattr(value, "__module__") and value.__module__:
+                        _report(value.__module__)
+                        if inspect.isfunction(value) or inspect.isclass(value):
+                            _inspect(value, depth + 1)
+
+                for name, value in closures.nonlocals.items():
+                    if hasattr(value, "__module__") and value.__module__:
+                        _report(value.__module__)
+                        if inspect.isfunction(value):
+                            _inspect(value, depth + 1)
+
+                # 3. Bytecode Analysis
+                if hasattr(func, "__code__"):
+                    for instr in dis.get_instructions(func):
+                        if instr.opname == "IMPORT_NAME":
+                            _report(instr.argval)
+
+            except Exception:
+                pass
+
+        # Trigger inspection for all registered entry points
+        self.logger.info("Running Packaging Heuristic on exposed functions...")
+        for info in self._exposed_functions.values():
+            func = info.get("func")
+            if func:
+                _inspect(func)

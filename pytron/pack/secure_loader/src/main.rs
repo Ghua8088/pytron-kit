@@ -8,7 +8,7 @@ mod python_runtime;
 
 use pyo3::prelude::*;
 use std::env;
-use crate::security::{check_debugger, get_footer_data};
+use crate::security::check_debugger;
 use crate::config::load_settings;
 use crate::patcher::check_and_apply_patches;
 use crate::ui::{alert, init_com, set_app_id};
@@ -37,25 +37,25 @@ fn main() -> PyResult<()> {
     
     check_and_apply_patches(&root_dir);
 
-    // Verify critical files (Payload only)
-    let payload_path = root_dir.join("app.pytron");
+    // Verify critical files (Compiled Payload)
+    let ext = if cfg!(windows) { "pyd" } else { "so" };
+    let payload_path = root_dir.join(format!("app.{}", ext));
 
     if !payload_path.exists() {
-        alert("Shield: Discovery Error", &format!(
-            "Critical asset 'app.pytron' missing.\nChecked: {}\n\nDistribution may be corrupted.",
-            payload_path.display()
-        ));
-        std::process::exit(1);
-    }
-
-    // Verify Integrity (Check Footer presence)
-    if let Err(e) = get_footer_data() {
-         alert("Security Alert", &format!("Integrity check failed: {}", e));
-         std::process::exit(1);
+        // Also check in _internal for standard onedir layouts
+        let internal_payload = internal_dir.join(format!("app.{}", ext));
+        if !internal_payload.exists() {
+            alert("Shield: Discovery Error", &format!(
+                "Critical compiled asset 'app.{}' missing.\nChecked: {}\n\nDistribution may be corrupted.",
+                ext, payload_path.display()
+            ));
+            std::process::exit(1);
+        }
     }
     
-    // Load config from settings.json on disk (Standard)
-    let settings = load_settings(&root_dir, None);
+    // Load config from settings.json (which is now in _internal)
+    // The load_settings helper might need root_dir, but we point to internal_dir for search
+    let settings = load_settings(&internal_dir, None);
     let app_title = settings.as_ref().and_then(|s| s.title.clone()).unwrap_or_else(|| "Pytron App".to_string());
     
     // Set App ID for Task Manager grouping
@@ -65,25 +65,46 @@ fn main() -> PyResult<()> {
     );
     set_app_id(&app_id);
     
-    let base_zip = internal_dir.join("base_library.zip");
+    let app_bundle = internal_dir.join("app.bundle");
+
+    // 2. DLL Discovery (Windows Fix for 'Everything in _internal')
+    #[cfg(windows)]
+    unsafe {
+        if let Ok(lib) = libloading::Library::new("kernel32.dll") {
+            let func: Result<libloading::Symbol<unsafe extern "system" fn(*const u16) -> i32>, _> = lib.get(b"SetDllDirectoryW");
+            if let Ok(set_dll_dir) = func {
+                use std::os::windows::ffi::OsStrExt;
+                let mut path_v: Vec<u16> = internal_dir.as_os_str().encode_wide().collect();
+                path_v.push(0);
+                set_dll_dir(path_v.as_ptr());
+            }
+        }
+    }
 
     // 2. Strict Environment Isolation
-    // Clear inherited Python variables that might poison the runtime
     env::remove_var("PYTHONPATH");
     env::remove_var("PYTHONHOME");
     
+    // Everything is now in _internal, so we point HOME there
     env::set_var("PYTHONHOME", &internal_dir);
     
     let path_sep = if cfg!(windows) { ";" } else { ":" };
-    let python_path = format!("{}{}{}", base_zip.display(), path_sep, internal_dir.display());
+    let python_path = if app_bundle.exists() {
+        format!("{}{}{}", internal_dir.display(), path_sep, app_bundle.display())
+    } else {
+        format!("{}", internal_dir.display())
+    };
     
     env::set_var("PYTHONPATH", &python_path);
     env::set_var("PYTHONNOUSERSITE", "1");
-    // Force UTF-8 Mode for Python 3.10+
+    // Speed Optimizations
+    env::set_var("PYTHONOPTIMIZE", "1");
+    env::set_var("PYTHONDONTWRITEBYTECODE", "1");
+    // Unicode Stability
     env::set_var("PYTHONUTF8", "1");
 
     // Run execution
-    let res = run_python_and_payload(&root_dir, &internal_dir, &base_zip);
+    let res = run_python_and_payload(&root_dir, &internal_dir, if app_bundle.exists() { Some(&app_bundle) } else { None });
     if let Err(e) = res {
         alert(&app_title, &format!("Fatal Engine Error:\n{}", e));
     }

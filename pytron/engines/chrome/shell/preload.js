@@ -1,9 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('pytron', {
+contextBridge.exposeInMainWorld('__pytron_native_bridge', {
     emit: (event, data) => ipcRenderer.send('pytron-message', { event, data }),
     on: (channel, func) => {
-        // Simple subscription provided by Electron
         ipcRenderer.on(channel, (event, ...args) => func(...args));
     }
 });

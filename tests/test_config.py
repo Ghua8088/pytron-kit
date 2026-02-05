@@ -78,7 +78,8 @@ def test_setup_identity(app):
     # Mock platform implementations to avoid side effects
     with patch("sys.platform", "win32"):
         with patch("pytron.platforms.windows.WindowsImplementation") as mock_win:
-            title, safe_title = app._setup_identity()
+            with patch("sys.frozen", True, create=True):
+                title, safe_title = app._setup_identity()
 
             assert title == "My Cool App"
             assert safe_title == "My_Cool_App"
@@ -91,9 +92,12 @@ def test_setup_storage(app, tmp_path):
     # Mock environment to control storage path
     with patch.dict(os.environ, {"LOCALAPPDATA": str(tmp_path)}):
         with patch("sys.platform", "win32"):
-            app._setup_storage("TestApp")
+            # Mock frozen=True to verify chdir behavior
+            with patch("sys.frozen", True, create=True):
+                app._setup_storage("TestApp")
 
     expected_path = tmp_path / "TestApp"
     assert app.storage_path == str(expected_path)
     assert os.path.exists(expected_path)
-    assert os.getcwd() == str(expected_path)
+    # Note: On Windows, os.path.normcase/normpath might be needed but usually paths match
+    assert os.path.normpath(os.getcwd()) == os.path.normpath(str(expected_path))
