@@ -31,6 +31,14 @@ def build_and_deploy():
             f"{rustflags} -C link-arg=-undefined -C link-arg=dynamic_lookup".strip()
         )
         print("[INFO] Applying macOS Linker Flags (dynamic_lookup)")
+    elif sys.platform.startswith("linux"):
+        rustflags = env.get("RUSTFLAGS", "")
+        # Linux binaries using pyo3 with extension-module need to allow undefined symbols
+        # to avoid linker errors, resolving them at runtime.
+        env["RUSTFLAGS"] = (
+            f"{rustflags} -C link-arg=-Wl,--unresolved-symbols=ignore-all".strip()
+        )
+        print("[INFO] Applying Linux Linker Flags (ignore-all)")
 
     try:
         cargo_bin = shutil.which("cargo") or "cargo"
