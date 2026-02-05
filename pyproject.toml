@@ -2,6 +2,9 @@
 requires = ["setuptools>=65.5.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["pytron*"]
@@ -9,7 +12,7 @@ namespaces = false
 
 [project]
 name = "pytron-kit"
-version = "0.3.9"
+version = "0.3.10"
 description = "An Electron-like library for Python to build Cross Platform Apps"
 readme = "README.md"
 requires-python = ">=3.7"
