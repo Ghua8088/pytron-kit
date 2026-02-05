@@ -55,6 +55,7 @@ class ChromeBridge:
                         "start_minimized", False
                     ),
                     "transparent": self.adapter.config.get("transparent", False),
+                    "center": self.adapter.config.get("center", True),
                 },
             }
         )
@@ -111,6 +112,11 @@ class ChromeBridge:
         if platform.system() == "Windows":
             return self.real_hwnd
         return 0
+
+    def create_tray(self, icon_path, tooltip="Pytron App"):
+        self.adapter.send(
+            {"action": "create_tray", "icon": str(icon_path), "tooltip": tooltip}
+        )
 
     def webview_dispatch(self, w, fn, arg):
         try:
