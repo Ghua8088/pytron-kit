@@ -18,13 +18,39 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+
+    - name: 🚪 Check for Rust changes
+      id: filter
+      uses: dorny/paths-filter@v3
+      with:
+        filters: |
+          rust_native:
+            - 'pytron/engines/native/**'
+            - 'pytron/engines/native/Cargo.toml'
+          rust_loader:
+            - 'pytron/pack/secure_loader/**'
+            - 'pytron/pack/secure_loader/Cargo.toml'
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
     
-    - name: Install Rust
+    - name: 🦀 Install Rust
       uses: dtolnay/rust-toolchain@stable
+
+    - name: 🕰️ Setup Rust Cache (Native Engine)
+      if: steps.filter.outputs.rust_native == 'true' || github.event_name == 'push'
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: "pytron/engines/native"
+
+    - name: 🕰️ Setup Rust Cache (Secure Loader)
+      if: steps.filter.outputs.rust_loader == 'true' || github.event_name == 'push'
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: "pytron/pack/secure_loader"
+
     - name: Install Linux Dependencies
       if: matrix.os == 'ubuntu-latest'
       run: |
@@ -52,7 +78,19 @@ jobs:
         pip install .
         pip install pytest
 
-    - name: Build Native Engine
+    - name: 🪶 Fast Check (PRs only)
+      if: github.event_name == 'pull_request' && (steps.filter.outputs.rust_native == 'true' || steps.filter.outputs.rust_loader == 'true')
+      run: |
+        if [ "${{ steps.filter.outputs.rust_native }}" == "true" ]; then
+          cd pytron/engines/native && cargo check
+        fi
+        if [ "${{ steps.filter.outputs.rust_loader }}" == "true" ]; then
+          cd pytron/pack/secure_loader && cargo check
+        fi
+      shell: bash
+
+    - name: 🦾 Build Native Engine
+      if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (steps.filter.outputs.rust_native == 'true')
       run: python pytron/engines/native/build.py
     
     - name: Run Tests
