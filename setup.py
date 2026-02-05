@@ -17,4 +17,9 @@ except ImportError:
 
 setup(
     distclass=BinaryDistribution,
+    package_data={
+        "pytron": ["dependencies/*", "dependencies/**/*", "installer/*", "manifests/*"],
+    },
+    include_package_data=True,
+    zip_safe=False,
 )
