@@ -41,6 +41,48 @@ import os
 import builtins
 from pathlib import Path
 import dis
+from unittest.mock import MagicMock
+
+# --- DEFANGER (Prevention of Side Effects during Audit) ---
+def _defang():
+    try:
+        import os, shutil, subprocess, socket
+        # Mock filesystem destructive operations
+        os.remove = MagicMock()
+        os.rmdir = MagicMock()
+        os.rename = MagicMock()
+        shutil.rmtree = MagicMock()
+        shutil.copy = MagicMock()
+        shutil.move = MagicMock()
+        
+        # Mock subprocess execution to prevent running external commands
+        subprocess.run = MagicMock()
+        subprocess.Popen = MagicMock()
+        subprocess.call = MagicMock()
+        subprocess.check_call = MagicMock()
+        subprocess.check_output = MagicMock()
+        
+        # Mock network/socket to prevent real network calls
+        socket.socket = MagicMock()
+        
+        # Try to mock popular 3rd party libs if they exist
+        try:
+            import requests
+            requests.get = MagicMock()
+            requests.post = MagicMock()
+            requests.request = MagicMock()
+        except ImportError: pass
+        
+        try:
+            import sqlite3
+            sqlite3.connect = MagicMock()
+        except ImportError: pass
+        
+        print("[Crystal] Side-effects defanged for audit.")
+    except Exception:
+        pass
+
+_defang()
 
 # --- SURVEILLANCE SYSTEM ---
 live_modules = set()
@@ -131,17 +173,57 @@ sys.addaudithook(audit_hook)
 # --- MANIFEST DUMPER ---
 def dump_manifest():
     # 1. Trigger App Heuristics (find hidden deps)
+    # 1. Trigger App Heuristics (find hidden deps)
     try:
         import gc
         import pytron
+        
+        # --- DYNAMIC ANALYSIS HELPERS (InvincibleMock) ---
+        from unittest.mock import MagicMock
+        
+        class InvincibleMock(MagicMock):
+            def __getattr__(self, name):
+                return self
+            def __call__(self, *args, **kwargs):
+                return self
+            def __int__(self): return 1
+            def __float__(self): return 1.0
+            def __str__(self): return "mock"
+            def __bool__(self): return True
+            def __iter__(self): return iter([])
+            def __getitem__(self, key): return self
+            
+        def audit_exposed_functions_dynamic(app):
+            print(f"[Crystal] Running Dynamic Execution Audit on {len(app._exposed_functions)} functions...")
+            for name, data in app._exposed_functions.items():
+                func = data['func']
+                try:
+                    # Get the number of arguments the function expects
+                    sig = inspect.signature(func)
+                    dummy_args = [InvincibleMock() for _ in sig.parameters]
+                    
+                    # We don't care if it returns garbage, we just want it to trigger imports
+                    # The MagicMock should absorb method calls on args
+                    func(*dummy_args)
+                except Exception:
+                    # Use a broad catch because we expect crashes from real logic interacting with Mocks
+                    # But the imports encountered before the crash are what we want.
+                    pass
+
         # Look for App in memory
         for obj in gc.get_objects():
             if isinstance(obj, pytron.App):
-                print("[Crystal] Triggering App.audit_dependencies()...")
+                print("[Crystal] Found App instance. Running Audits...")
+                
+                # 1. Static Audit (Original)
                 if hasattr(obj, "audit_dependencies"):
-                    obj.audit_dependencies()
+                     obj.audit_dependencies()
+                
+                # 2. Dynamic Audit (New)
+                audit_exposed_functions_dynamic(obj)
                 break
-    except: pass
+    except Exception as e:
+        print(f"[Crystal] Heuristic Scan Warning: {e}")
 
     # 2. Load existing lock file to merge
     existing_data = {{"modules": [], "files": []}}
