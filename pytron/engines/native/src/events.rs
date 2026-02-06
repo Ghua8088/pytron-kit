@@ -10,6 +10,7 @@ pub enum UserEvent {
     Return(String, i32, String),
     SetTitle(String),
     SetSize(i32, i32, u32),
+    SetBounds(i32, i32, i32, i32), // x, y, w, h
     Navigate(String),
     Quit,
     Minimize,

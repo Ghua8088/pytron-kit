@@ -345,6 +345,10 @@ impl NativeWebview {
                                 UserEvent::Eval(js) => { let _ = state.webview.evaluate_script(&js); }
                                 UserEvent::SetTitle(t) => { state.window.set_title(&t); }
                                 UserEvent::SetSize(w, h, _) => { state.window.set_inner_size(tao::dpi::LogicalSize::new(w, h)); }
+                                UserEvent::SetBounds(x, y, w, h) => {
+                                    state.window.set_outer_position(tao::dpi::LogicalPosition::new(x, y));
+                                    state.window.set_inner_size(tao::dpi::LogicalSize::new(w, h));
+                                }
                                 
                                 UserEvent::Navigate(u) => { 
                                     let _ = state.webview.load_url(&u);
@@ -568,6 +572,7 @@ impl NativeWebview {
 
     pub fn set_title(&self, t: String) { let _ = self.proxy.send_event(UserEvent::SetTitle(t)); }
     pub fn set_size(&self, w: i32, h: i32, hints: u32) { let _ = self.proxy.send_event(UserEvent::SetSize(w, h, hints)); }
+    pub fn set_bounds(&self, x: i32, y: i32, w: i32, h: i32) { let _ = self.proxy.send_event(UserEvent::SetBounds(x, y, w, h)); }
     pub fn navigate(&self, u: String) { let _ = self.proxy.send_event(UserEvent::Navigate(u)); }
     pub fn eval(&self, j: String) { let _ = self.proxy.send_event(UserEvent::Eval(j)); }
     pub fn bind(&self, n: String, f: PyObject) { 

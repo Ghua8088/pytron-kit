@@ -252,6 +252,8 @@ class Webview:
         self.bind(
             "pytron_set_slim_titlebar", self.set_slim_titlebar, run_in_thread=False
         )
+        self.bind("pytron_set_bounds", self.set_bounds, run_in_thread=False)
+        self.bind("pytron_get_registered_shortcuts", self.get_registered_shortcuts, run_in_thread=True)
 
         # 2. SYSTEM TOOLING / DIALOGS (Prefixed)
         self.bind("pytron_dialog_open_file", self.dialog_open_file, run_in_thread=True)
@@ -290,6 +292,8 @@ class Webview:
         self.bind("message_box", self.message_box, run_in_thread=True)
         self.bind("system_notification", self.system_notification, run_in_thread=True)
         self.bind("set_taskbar_progress", self.set_taskbar_progress, run_in_thread=True)
+        self.bind("set_bounds", self.set_bounds, run_in_thread=False)
+        self.bind("get_registered_shortcuts", self.get_registered_shortcuts, run_in_thread=True)
 
     def _serve_asset_callback(self, key):
         """Called by Native Engine Protocol Handler to fetch VAP assets."""
@@ -434,6 +438,22 @@ class Webview:
 
     def set_size(self, w, h):
         self.native.set_size(w, h, 0)
+
+    def set_bounds(self, x, y, width, height):
+        if hasattr(self.native, "set_bounds"):
+            self.native.set_bounds(int(x), int(y), int(width), int(height))
+        else:
+            # Fallback if native not rebuilt yet (partial updates)
+            self.native.set_size(int(width), int(height), 0)
+
+    def get_registered_shortcuts(self):
+        """Returns a list of currently registered shortcut accelerators."""
+        if self.app and hasattr(self.app, "shortcuts"):
+             # app.shortcuts is the shortcut manager instance
+             # It stores registered shortcuts in self.shortcuts dict
+             if hasattr(self.app.shortcuts, "shortcuts"):
+                 return list(self.app.shortcuts.shortcuts.keys())
+        return []
 
     def eval(self, js):
         self.native.eval(js)
