@@ -8,6 +8,7 @@ import sysconfig
 import platform
 from pathlib import Path
 from ..console import log, run_command_with_output, console, Rule
+from ..exceptions import ModuleError
 from .installers import build_installer
 from ..commands.helpers import get_python_executable, get_venv_site_packages
 from ..commands.harvest import generate_nuclear_hooks
@@ -42,7 +43,10 @@ class SecurityModule(BuildModule):
 
         self.compiled_pyd = cython_compile(context.script, self.build_dir)
         if not self.compiled_pyd:
-            raise RuntimeError("Shield Error: Cython compilation failed.")
+            raise ModuleError(
+                "Cython compilation failed. Ensure your script has no syntax errors and Cython is installed.",
+                module_name="SecurityModule",
+            )
 
         # 3. GENERATE BOOTSTRAP SCRIPT
         bootstrap_path = self.build_dir / "bootstrap_env.py"

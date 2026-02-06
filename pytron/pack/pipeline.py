@@ -5,6 +5,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 from ..console import log, console, get_progress
+from ..exceptions import BuildError, ModuleError
 
 
 @dataclass
@@ -82,26 +83,68 @@ class Pipeline:
         2. Build Wrapper (Nested call)
         3. Post Build (All modules, reverse order)
         """
-        # 1. Prepare
-        for module in self.modules:
-            module.prepare(self.context)
-
-        # 2. Build Wrapper (Chain them)
-        current_build_func = core_build_func
-
-        # We wrap it in reverse order so the first module added is the outermost wrapper
-        for module in reversed(self.modules):
-            # Create a closure to capture the current state of build_func
-            def make_wrapper(m, func):
-                return lambda ctx: m.build_wrapper(ctx, func)
-
-            current_build_func = make_wrapper(module, current_build_func)
-
-        ret_code = current_build_func(self.context)
-
-        # 3. Post Build
-        if ret_code == 0:
+        try:
+            # 1. Prepare
             for module in self.modules:
-                module.post_build(self.context)
+                try:
+                    module.prepare(self.context)
+                except Exception as e:
+                    module_name = module.__class__.__name__
+                    raise ModuleError(
+                        f"Preparation failed: {e}", module_name=module_name
+                    ) from e
 
-        return ret_code
+            # 2. Build Wrapper (Chain them)
+            current_build_func = core_build_func
+
+            # We wrap it in reverse order so the first module added is the outermost wrapper
+            for module in reversed(self.modules):
+                # Create a closure to capture the current state of build_func
+                def make_wrapper(m, func):
+                    def wrapped(ctx):
+                        try:
+                            return m.build_wrapper(ctx, func)
+                        except Exception as e:
+                            m_name = m.__class__.__name__
+                            if isinstance(e, ModuleError):
+                                raise
+                            raise ModuleError(
+                                f"Build step failed: {e}", module_name=m_name
+                            ) from e
+
+                    return wrapped
+
+                current_build_func = make_wrapper(module, current_build_func)
+
+            try:
+                ret_code = current_build_func(self.context)
+            except BuildError:
+                raise
+            except Exception as e:
+                raise BuildError(f"Core build execution failed: {e}") from e
+
+            # 3. Post Build
+            if ret_code == 0:
+                for module in self.modules:
+                    try:
+                        module.post_build(self.context)
+                    except Exception as e:
+                        module_name = module.__class__.__name__
+                        log(
+                            f"Warning: [{module_name}] post_build failed: {e}",
+                            style="warning",
+                        )
+
+            return ret_code
+
+        except BuildError as e:
+            log(f"Pipeline Error: {e}", style="error")
+            if hasattr(e, "__cause__") and e.__cause__:
+                log(f"  + Cause: {e.__cause__}", style="dim")
+            return 1
+        except Exception as e:
+            log(f"Unexpected Pipeline Crash: {e}", style="error")
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim")
+            return 1

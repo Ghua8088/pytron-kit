@@ -5,6 +5,7 @@ import logging
 from typing import Callable, Dict
 import ctypes.wintypes
 import queue
+from .exceptions import ShortcutRegistrationError
 
 # Windows Constants
 MOD_ALT = 0x0001
@@ -260,9 +261,15 @@ class ShortcutManager:
                             data["registered"] = True
                             self.logger.info(f"Registered global shortcut ID {sid}")
                         else:
+                            err_code = ctypes.GetLastError()
                             self.logger.error(
-                                f"Failed to register ID {sid}. Error: {ctypes.GetLastError()}"
+                                f"Failed to register ID {sid}. Error: {err_code}"
                             )
+                            # We can't easily raise to the main thread from here, but we can log specific error.
+                            # Ideally, we should post a callback failure.
+                            # For now, we rely on the logger, but if we wanted to be strict:
+                            # raise ShortcutRegistrationError(f"Failed to register shortcut. Win32 Error: {err_code}")
+                            pass
 
             user32.TranslateMessage(ctypes.byref(msg))
             user32.DispatchMessageW(ctypes.byref(msg))

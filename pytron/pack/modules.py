@@ -620,7 +620,7 @@ class IconModule(BuildModule):
             # We must copy to a temp file with the desired name, then bundle that.
             temp_icon = context.build_dir / f"app_icon{ext}"
             shutil.copy2(context.app_icon, temp_icon)
-            
+
             # Bundle into 'resources' dir. Result: resources/app_icon.ext
             context.add_data.append(f"{temp_icon}{os.pathsep}resources")
             log(f"Bundled runtime icon to resources/app_icon{ext}", style="dim")

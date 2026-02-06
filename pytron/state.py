@@ -2,6 +2,8 @@ import sys
 import os
 import json
 import threading
+from .exceptions import StateError
+
 
 def _get_global_store():
     # Helper to access standard sys overrides
@@ -10,23 +12,33 @@ def _get_global_store():
     store = getattr(sys, SOVEREIGN_KEY, None)
     if store is None:
         import builtins
+
         store = getattr(builtins, SOVEREIGN_KEY, None)
     return store
+
 
 def _set_global_store(store):
     SOVEREIGN_KEY = "_pytron_sovereign_state_store_"
     setattr(sys, SOVEREIGN_KEY, store)
     import builtins
+
     setattr(builtins, SOVEREIGN_KEY, store)
 
+
 def json_safe_dump(obj):
-    if isinstance(obj, (str, int, float, bool, type(None))): return obj
-    if isinstance(obj, dict): return {str(k): json_safe_dump(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple, set)): return [json_safe_dump(x) for x in obj]
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+    if isinstance(obj, dict):
+        return {str(k): json_safe_dump(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [json_safe_dump(x) for x in obj]
     if hasattr(obj, "to_dict"):
-        try: return json_safe_dump(obj.to_dict())
-        except: pass
+        try:
+            return json_safe_dump(obj.to_dict())
+        except:
+            pass
     return str(obj)
+
 
 def log_shield(msg):
     try:
@@ -34,21 +46,26 @@ def log_shield(msg):
             # In frozen apps, stderr might be captured or lost, but it's safe
             sys.stderr.write(f"[SHIELD] {msg}\n")
             sys.stderr.flush()
-    except: pass
+    except:
+        pass
+
 
 class ReactiveState:
     def __init__(self, app):
         object.__setattr__(self, "_app", app)
-        
+
         # 1. Retrieve or Create the Global Store
         store = _get_global_store()
-        
+
         if store is None:
             # TRY LOAD NATIVE via CANONICAL RESOLVER
             from .utils import resolve_native_module
+
             native_mod = resolve_native_module()
-            NativeState = getattr(native_mod, "NativeState", None) if native_mod else None
-            
+            NativeState = (
+                getattr(native_mod, "NativeState", None) if native_mod else None
+            )
+
             if NativeState:
                 try:
                     store = NativeState()
@@ -59,7 +76,7 @@ class ReactiveState:
             else:
                 store = self._create_mock_store()
                 mode = "Python-Mock"
-            
+
             _set_global_store(store)
             log_shield(f"Sovereign State Initialized (Mode: {mode})")
         else:
@@ -72,14 +89,23 @@ class ReactiveState:
             def __init__(self):
                 self.data = {}
                 self._lock = threading.RLock()
+
             def set(self, k, v):
-                with self._lock: self.data[k] = v
+                with self._lock:
+                    self.data[k] = v
+
             def get(self, k):
-                with self._lock: return self.data.get(k)
+                with self._lock:
+                    return self.data.get(k)
+
             def to_dict(self):
-                with self._lock: return dict(self.data)
+                with self._lock:
+                    return dict(self.data)
+
             def update(self, m):
-                with self._lock: self.data.update(m)
+                with self._lock:
+                    self.data.update(m)
+
         return MockStore()
 
     def __setattr__(self, key, value):
@@ -96,22 +122,29 @@ class ReactiveState:
             if app_ref and hasattr(app_ref, "config") and app_ref.config.get("debug"):
                 log_shield(f"State Update: {key}")
         except Exception as e:
-            log_shield(f"State write error for '{key}': {e}")
-            pass
+            raise StateError(f"Failed to set state for key '{key}': {e}") from e
 
         # Python-side propagation (legacy fallback, Iron Bridge handles native)
         if app_ref:
             try:
                 windows = getattr(app_ref, "windows", [])
                 for window in list(windows):
-                    try: window.emit("pytron:state-update", {"key": key, "value": safe_val})
-                    except: pass
-            except: pass
+                    try:
+                        window.emit(
+                            "pytron:state-update", {"key": key, "value": safe_val}
+                        )
+                    except:
+                        pass
+            except:
+                pass
 
     def __getattr__(self, key):
-        if key.startswith("_"): return object.__getattribute__(self, key)
-        try: return object.__getattribute__(self, "_store").get(key)
-        except: return None
+        if key.startswith("_"):
+            return object.__getattribute__(self, key)
+        try:
+            return object.__getattribute__(self, "_store").get(key)
+        except:
+            return None
 
     def to_dict(self):
         try:
@@ -122,8 +155,10 @@ class ReactiveState:
             return {}
 
     def update(self, mapping: dict):
-        if not isinstance(mapping, dict): return
+        if not isinstance(mapping, dict):
+            return
         try:
             store = object.__getattribute__(self, "_store")
             store.update(json_safe_dump(mapping))
-        except: pass
+        except:
+            pass

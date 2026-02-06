@@ -2,6 +2,7 @@ import re
 import urllib.parse
 import inspect
 import logging
+from .exceptions import RoutingError
 
 
 class DeepLink:
@@ -42,14 +43,13 @@ class Router:
     def add_route(self, pattern: str, func):
         """
         Registers a route pattern.
-        Pattern examples:
-          - "home" matches myapp://home
-          - "document/{id}" matches myapp://document/123
-          - "user/{name}/profile" matches myapp://user/alice/profile
         """
-        # 1. Normalize pattern to ensure it handles the 'netloc' vs 'path' ambiguity of custom schemes
-        # We treat everything after 'scheme://' as the routable path.
         clean_pattern = pattern.strip("/")
+
+        # Check for duplicates
+        for route in self.routes:
+            if route["pattern"] == clean_pattern:
+                raise RoutingError(f"Route pattern '{clean_pattern}' is already registered.")
 
         # 2. Convert {param} to Regex Group (?P<param>[^/]+)
         # Escape special regex chars but leave our braces
@@ -143,4 +143,6 @@ class Router:
             func(**kwargs)
 
         except Exception as e:
-            self.logger.error(f"Handler failed for deep link: {e}")
+            raise RoutingError(
+                f"Handler '{func.__name__}' failed for deep link '{link.raw_url}': {e}"
+            ) from e

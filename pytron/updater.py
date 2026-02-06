@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 from packaging.version import parse as parse_version
 import stat
+from .exceptions import UpdateError
 
 
 class Updater:
@@ -54,8 +55,7 @@ class Updater:
                 remote_version = data.get("version")
 
                 if not remote_version:
-                    self.logger.error("Invalid update manifest: missing 'version'")
-                    return None
+                    raise UpdateError(f"Invalid update manifest at {url}: missing 'version' field.")
 
                 # Compare versions
                 if parse_version(remote_version) > parse_version(self.current_version):
@@ -68,11 +68,11 @@ class Updater:
                     return None
 
         except urllib.error.URLError as e:
-            self.logger.error(f"Failed to check for updates: {e}")
-            return None
+            raise UpdateError(f"Network error while checking for updates: {e}") from e
         except Exception as e:
-            self.logger.error(f"Error checking updates: {e}")
-            return None
+            if isinstance(e, UpdateError):
+                raise
+            raise UpdateError(f"Unexpected error during update check: {e}") from e
 
     def download_and_install(self, update_info: dict, on_progress=None):
         """

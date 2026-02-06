@@ -26,7 +26,7 @@ except ImportError:
 
 import urllib.parse
 from .serializer import pytron_serialize
-from .exceptions import ConfigError
+from .exceptions import ConfigError, NativeEngineError
 
 IS_ANDROID = False
 
@@ -37,8 +37,10 @@ IS_ANDROID = False
 class Webview:
     def __init__(self, config):
         if not pytron_native:
-            raise ImportError(
-                "Pytron Native Engine (pyd) is missing. Run build_engine.py."
+            raise NativeEngineError(
+                "Pytron Native Engine binary (pytron_native.pyd/so) is missing or could not be loaded. "
+                "Ensure it is present in 'pytron/dependencies' or your environment. "
+                "You may need to run 'pytron engine install native' or check for architecture mismatches."
             )
 
         self.config = config
@@ -109,18 +111,33 @@ class Webview:
             # bindings can be registered (via UserEvent::Bind) BEFORE the real app loads.
             # This prevents race conditions where IPC calls happen before callbacks are ready.
             self._start_url = final_url
-            
+
             # Access the underlying NativeState for the Iron Bridge
-            store_instance = self.app.state._store if self.app and hasattr(self.app.state, "_store") else None
-            
+            store_instance = (
+                self.app.state._store
+                if self.app and hasattr(self.app.state, "_store")
+                else None
+            )
+
             self.native = pytron_native.NativeWebview(
                 debug,
                 "about:blank",  # Start empty
                 root_path,
                 bool(resizable),
                 bool(frameless),
-                store_instance
+                store_instance,
             )
+        except RuntimeError as e:
+            err_msg = str(e)
+            if "0x8007139F" in err_msg:
+                raise NativeEngineError(
+                    "WebView2 Conflict (0x8007139F): The User Data Folder is locked or in an invalid state. \n"
+                    "SOLUTIONS: \n"
+                    "1. Close any ghost processes of this app in Task Manager. \n"
+                    "2. Try deleting the storage folder: " + str(getattr(self.app, 'storage_path', 'unknown')) + "\n"
+                    "3. Ensure your 'settings.json' has a unique 'title' to avoid conflicts with other Pytron apps."
+                ) from e
+            raise NativeEngineError(f"Failed to initialize Native WebView: {e}") from e
         except TypeError:
             # Fallback if pyd wasn't updated yet? No, we will rebuild.
             raise ImportError("Native Engine signature mismatch. Please rebuild.")
@@ -210,7 +227,7 @@ class Webview:
         if hasattr(self, "_start_url"):
             self.logger.info(f"Navigating to start URL: {self._start_url}")
             self.navigate(self._start_url)
-            
+
             # Apply hacks after navigation request
             if self.config.get("always_on_top", False):
                 self.set_always_on_top(True)
@@ -454,16 +471,17 @@ class Webview:
     def _sync_state(self):
         # We use a direct import to ensure we get the sovereign log_shield
         from .state import log_shield
+
         if self.app:
             try:
                 if self.config.get("debug"):
                     log_shield("Received pytron_sync_state Request")
-                
+
                 state_dict = self.app.state.to_dict()
-                
+
                 if self.config.get("debug"):
                     log_shield(f"Syncing state keys: {list(state_dict.keys())}")
-                
+
                 return state_dict
             except Exception as e:
                 log_shield(f"SYNC FATAL ERROR: {e}")

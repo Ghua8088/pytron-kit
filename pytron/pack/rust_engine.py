@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 from .pipeline import BuildModule, BuildContext
 from ..console import log
+from ..exceptions import ModuleError
 from ..commands.helpers import get_python_executable
 
 
@@ -87,7 +88,10 @@ class RustEngine(BuildModule):
             log(f"Native compilation successful: {output_pyd.name}", style="success")
             self.compiled_pyd = output_pyd
         else:
-            raise RuntimeError("Native compilation failed.")
+            raise ModuleError(
+                "Native compilation (Cython + Zig/CC) failed. Check logs above for specific compiler errors.",
+                module_name="RustEngine",
+            )
 
     def _deploy_bootloader(self, context: BuildContext):
         """
@@ -110,7 +114,10 @@ class RustEngine(BuildModule):
         )
 
         if not loader_src.exists():
-            raise RuntimeError(f"Rust Bootloader not found at {loader_src}")
+            raise ModuleError(
+                f"Rust Bootloader binary not found at {loader_src}. You may need to run 'build_loader.py' in pytron/pack/secure_loader.",
+                module_name="RustEngine",
+            )
 
         # Dest path (Renamed to output name)
         dest_exe = context.dist_dir / f"{context.out_name}{ext}"

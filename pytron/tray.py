@@ -4,6 +4,7 @@ import ctypes
 import threading
 import logging
 from typing import Callable, List, Optional
+from .exceptions import TrayError
 from .utils import get_resource_path
 
 # Platform-specific imports
@@ -155,8 +156,10 @@ class SystemTray:
                     menu.addItem_(mi)
 
             self._status_item.setMenu_(menu)
-        except ImportError:
-            self.logger.error("macOS Tray requires 'pyobjc-framework-Cocoa'.")
+        except ImportError as e:
+            raise TrayError(f"macOS Tray requires 'pyobjc-framework-Cocoa': {e}") from e
+        except Exception as e:
+            raise TrayError(f"Failed to initialize macOS tray: {e}") from e
 
     def _start_linux(self, app):
         try:
@@ -189,8 +192,10 @@ class SystemTray:
             indicator.set_menu(menu)
             self._indicator = indicator
 
-        except (ImportError, ValueError):
-            self.logger.error("Linux Tray requires 'PyGObject' and 'libappindicator3'.")
+        except (ImportError, ValueError) as e:
+            raise TrayError(f"Linux Tray requires 'PyGObject' and 'libappindicator3': {e}") from e
+        except Exception as e:
+            raise TrayError(f"Failed to initialize Linux tray: {e}") from e
 
     def _start_windows(self, app):
         # Event to sync creation
@@ -324,7 +329,9 @@ class SystemTray:
             nid.hIcon = self._hicon
             nid.szTip = self.title[:127]
 
-            shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
+            res = shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
+            if not res:
+                raise TrayError("Failed to add icon to system tray. Shell_NotifyIconW returned False.")
 
             # Signal that we are ready!
             ready_event.set()

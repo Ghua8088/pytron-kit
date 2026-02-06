@@ -11,8 +11,7 @@ import shutil
 from typing import Dict, Any, List
 
 
-class PluginError(Exception):
-    pass
+from .exceptions import PluginError, PluginLoadError, PluginDependencyError
 
 
 class PluginStorage:
@@ -218,7 +217,7 @@ class Plugin:
                 self.logger.info(f"Python dependencies installed into {python_exe}")
             except subprocess.CalledProcessError as e:
                 self.logger.error(f"Failed to install Python dependencies: {e}")
-                raise PluginError(f"Python dependency installation failed: {e}")
+                raise PluginDependencyError(f"Python dependency installation failed: {e}")
 
         # 2. JS Dependencies
         js_deps = self.npm_dependencies
@@ -264,7 +263,7 @@ class Plugin:
                 )
             except Exception as e:
                 self.logger.error(f"Failed to install JS dependencies: {e}")
-                raise PluginError(f"JS dependency installation failed: {e}")
+                raise PluginDependencyError(f"JS dependency installation failed: {e}")
                 # We don't necessarily want to crash the whole app if NPM is missing,
                 # but we should log it.
 
@@ -277,7 +276,7 @@ class Plugin:
         entry_str = self.entry_point
 
         if ":" not in entry_str:
-            raise PluginError(
+            raise PluginLoadError(
                 f"Invalid entry_point format '{entry_str}'. Expected 'module:function' or 'module:Class'"
             )
 
@@ -297,7 +296,7 @@ class Plugin:
                 file_path = init_path
 
         if not os.path.exists(file_path):
-            raise PluginError(
+            raise PluginLoadError(
                 f"Could not find entry point file for plugin '{self.name}': {file_path}"
             )
 
@@ -321,16 +320,16 @@ class Plugin:
                 try:
                     spec.loader.exec_module(self.module)
                 except ImportError as e:
-                    raise PluginError(f"Import Error in {self.name}: {e}")
+                    raise PluginLoadError(f"Import Error in {self.name}: {e}") from e
                 finally:
                     if path_added and plugin_dir in sys.path:
                         sys.path.remove(plugin_dir)
             else:
-                raise PluginError(f"Could not load module spec for {self.name}")
+                raise PluginLoadError(f"Could not load module spec for {self.name}")
 
             # Get the object
             if not hasattr(self.module, object_name):
-                raise PluginError(
+                raise PluginLoadError(
                     f"Entry point '{object_name}' not found in module '{module_name}'"
                 )
 
@@ -391,16 +390,18 @@ class Plugin:
 
                 except TypeError as e:
                     if "NoneType" in str(e) and "callable" in str(e):
-                        self.logger.error(
-                            f"CRITICAL: 'NoneType' object is not callable in {self.name}. Check if entry point is valid or if dependencies are missing."
-                        )
+                        msg = f"CRITICAL: 'NoneType' object is not callable in {self.name}. Check if entry point is valid."
+                        self.logger.error(msg)
+                        raise PluginLoadError(msg) from e
                     self.logger.error(
                         f"Plugin '{self.name}' initialization crash (TypeError): {e}"
                     )
                     self.logger.debug(traceback.format_exc())
+                    raise PluginLoadError(f"Plugin initialization failed: {e}") from e
                 except Exception as e:
                     self.logger.error(f"Plugin '{self.name}' initialization crash: {e}")
                     self.logger.debug(traceback.format_exc())
+                    raise PluginLoadError(f"Plugin initialization failed: {e}") from e
 
             if self.isolated:
                 self.logger.info(
@@ -414,7 +415,9 @@ class Plugin:
                 init_plugin()
 
         except Exception as e:
-            raise PluginError(f"Failed to load plugin '{self.name}': {e}")
+            if isinstance(e, (PluginLoadError, PluginDependencyError)):
+                raise
+            raise PluginLoadError(f"Failed to load plugin '{self.name}': {e}") from e
 
     def unload(self):
         """

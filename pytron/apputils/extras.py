@@ -26,29 +26,29 @@ class ExtrasMixin:
         """
         if not icon_path:
             return None
-            
+
         resolved = icon_path
         if not os.path.isabs(icon_path):
             resolved = os.path.join(self.app_root, icon_path)
-        
+
         # Check if strictly exists
         if os.path.exists(resolved):
             return resolved
-            
+
         # Fallback to bundled resource
         for ext in [".ico", ".png", ".icns"]:
             fallback = os.path.join(self.app_root, "resources", f"app_icon{ext}")
             if os.path.exists(fallback):
                 return fallback
-                
-        return resolved # Return best guess if fallback fails
+
+        return resolved  # Return best guess if fallback fails
 
     def setup_tray(self, title=None, icon=None):
         if not title:
             title = self.config.get("title", "Pytron")
         if not icon and "icon" in self.config:
             icon = self.config["icon"]
-            
+
         icon = self._resolve_icon_path(icon)
         self.tray = SystemTray(title, icon)
         return self.tray
@@ -60,7 +60,7 @@ class ExtrasMixin:
                 title = self.config.get("title", "Pytron")
             if not icon:
                 icon = self.config.get("icon")
-            
+
             icon = self._resolve_icon_path(icon)
 
             if not self.windows:
@@ -69,7 +69,7 @@ class ExtrasMixin:
                 self.config["_pending_native_tray"] = {
                     "title": title,
                     "icon": icon,
-                    "close_to_tray": True
+                    "close_to_tray": True,
                 }
                 self.logger.info("Queued Native Tray creation for upcoming window.")
                 return None

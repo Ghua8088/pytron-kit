@@ -4,6 +4,7 @@ import shutil
 import requests
 import platform
 import logging
+from ...exceptions import ForgeError
 
 logger = logging.getLogger("Pytron.ChromeForge")
 
@@ -29,7 +30,12 @@ def download_electron(dest_path):
         f"Connecting to Chrome Shell Depository (Electron v{ELECTRON_VERSION})..."
     )
 
-    response = requests.get(url, stream=True, timeout=30)
+    try:
+        response = requests.get(url, stream=True, timeout=30)
+        response.raise_for_status()
+    except Exception as e:
+        raise ForgeError(f"Failed to download Chrome Engine core from {url}: {e}")
+
     total_size = int(response.headers.get("content-length", 0))
     temp_zip = os.path.join(dest_path, "electron.zip")
 
@@ -43,28 +49,32 @@ def download_electron(dest_path):
         TransferSpeedColumn,
     )
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=40),
-        TaskProgressColumn(),
-        DownloadColumn(),
-        TransferSpeedColumn(),
-        transient=True,
-    ) as progress:
-        task = progress.add_task("[cyan]Injecting Chromium Core...", total=total_size)
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=40),
+            TaskProgressColumn(),
+            DownloadColumn(),
+            TransferSpeedColumn(),
+            transient=True,
+        ) as progress:
+            task = progress.add_task("[cyan]Injecting Chromium Core...", total=total_size)
 
-        with open(temp_zip, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-                    progress.update(task, advance=len(chunk))
+            with open(temp_zip, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        progress.update(task, advance=len(chunk))
 
-    logger.info("Extraction phase: Unpacking Mojo shells...")
-    with zipfile.ZipFile(temp_zip, "r") as zip_ref:
-        zip_ref.extractall(dest_path)
-
-    os.remove(temp_zip)
+        logger.info("Extraction phase: Unpacking Mojo shells...")
+        with zipfile.ZipFile(temp_zip, "r") as zip_ref:
+            zip_ref.extractall(dest_path)
+    except Exception as e:
+        raise ForgeError(f"Failed to unpack Chrome Engine core: {e}")
+    finally:
+        if os.path.exists(temp_zip):
+            os.remove(temp_zip)
 
 
 def perform_surgery(path):
@@ -90,32 +100,35 @@ def perform_surgery(path):
         "d3dcompiler_47.dll",
     ]
 
-    # 1. Clean root
-    for item in os.listdir(path):
-        if item not in to_keep and item not in ["locales", "resources"]:
-            p = os.path.join(path, item)
-            if os.path.isdir(p):
-                shutil.rmtree(p)
-            else:
-                os.remove(p)
+    try:
+        # 1. Clean root
+        for item in os.listdir(path):
+            if item not in to_keep and item not in ["locales", "resources"]:
+                p = os.path.join(path, item)
+                if os.path.isdir(p):
+                    shutil.rmtree(p)
+                else:
+                    os.remove(p)
 
-    # 2. Clean locales (Keep only en-US)
-    locales_path = os.path.join(path, "locales")
-    if os.path.exists(locales_path):
-        for locale in os.listdir(locales_path):
-            if locale != "en-US.pak":
-                os.remove(os.path.join(locales_path, locale))
+        # 2. Clean locales (Keep only en-US)
+        locales_path = os.path.join(path, "locales")
+        if os.path.exists(locales_path):
+            for locale in os.listdir(locales_path):
+                if locale != "en-US.pak":
+                    os.remove(os.path.join(locales_path, locale))
 
-    # 3. Inject Shell Logic
-    logger.info("Injecting Mojo Bridge logic...")
-    app_path = os.path.join(path, "resources", "app")
-    if not os.path.exists(app_path):
-        os.makedirs(app_path)
+        # 3. Inject Shell Logic
+        logger.info("Injecting Mojo Bridge logic...")
+        app_path = os.path.join(path, "resources", "app")
+        if not os.path.exists(app_path):
+            os.makedirs(app_path)
 
-    # Source the shell files from our core
-    core_shell_src = os.path.abspath(os.path.join(os.path.dirname(__file__), "shell"))
-    for file in os.listdir(core_shell_src):
-        shutil.copy(os.path.join(core_shell_src, file), os.path.join(app_path, file))
+        # Source the shell files from our core
+        core_shell_src = os.path.abspath(os.path.join(os.path.dirname(__file__), "shell"))
+        for file in os.listdir(core_shell_src):
+            shutil.copy(os.path.join(core_shell_src, file), os.path.join(app_path, file))
+    except Exception as e:
+        raise ForgeError(f"Binary surgery failed: {e}")
 
 
 class ChromeForge:
