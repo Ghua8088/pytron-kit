@@ -23,7 +23,7 @@ pub enum UserEvent {
     SetFullscreen(bool),
     CenterWindow,
     SetPreventClose(bool),
-    CreateTray(String, String), // icon_path, tooltip
+    CreateTray(String, Option<String>), // tooltip, icon_path
     TrayMenuClick(String), // id
     SetDecorations(bool),
     MessageBox(String, String, String, String), // Title, Message, Level, Seq

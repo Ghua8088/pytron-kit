@@ -187,6 +187,16 @@ class Webview:
     def start(self):
         self.logger.info("Starting Native Event Loop...")
 
+        # Consume Pending Tray Config (from setup_tray_standard)
+        if self.app and self.app.config.get("_pending_native_tray"):
+            cfg = self.app.config.pop("_pending_native_tray")
+            self.logger.info("Initializing Defered Native Tray...")
+            try:
+                self.create_tray(cfg["icon"], cfg["title"])
+                self.config["close_to_tray"] = cfg["close_to_tray"]
+            except Exception as e:
+                self.logger.error(f"Failed to create deferred tray: {e}")
+
         # Register Native Event Handlers (Direct Binding)
         self.native.bind("pytron_on_close", self._on_close_requested)
         self.native.bind("pytron_tray_click", self._on_tray_click)
@@ -200,6 +210,10 @@ class Webview:
         if hasattr(self, "_start_url"):
             self.logger.info(f"Navigating to start URL: {self._start_url}")
             self.navigate(self._start_url)
+            
+            # Apply hacks after navigation request
+            if self.config.get("always_on_top", False):
+                self.set_always_on_top(True)
 
         self.native.run()
 
@@ -669,7 +683,7 @@ class Webview:
     # --- Native Tray & Close Handling ---
     def create_tray(self, icon_path, tooltip="Pytron App"):
         if hasattr(self.native, "create_tray"):
-            self.native.create_tray(icon_path, tooltip)
+            self.native.create_tray(tooltip, icon_path)
 
     def set_prevent_close(self, prevent):
         if hasattr(self.native, "set_prevent_close"):

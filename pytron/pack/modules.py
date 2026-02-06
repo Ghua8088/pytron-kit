@@ -613,6 +613,14 @@ class IconModule(BuildModule):
         # For now, let's DISABLE this implicit copy or rename it to avoid collision.
 
         if context.app_icon and os.path.exists(context.app_icon):
-            # We rename it in the bundle to avoid collision with the directory or other files
-            # context.add_data.append(f"{context.app_icon}{os.pathsep}resources/app_icon.ico")
-            pass
+            # SAFELY bundle it into 'resources' to avoid potential root collisions
+            # This allows runtime features (Tray, Notifications) to access the file
+            ext = Path(context.app_icon).suffix
+            # PyInstaller add_data DEST is a folder. We cannot rename files directly.
+            # We must copy to a temp file with the desired name, then bundle that.
+            temp_icon = context.build_dir / f"app_icon{ext}"
+            shutil.copy2(context.app_icon, temp_icon)
+            
+            # Bundle into 'resources' dir. Result: resources/app_icon.ext
+            context.add_data.append(f"{temp_icon}{os.pathsep}resources")
+            log(f"Bundled runtime icon to resources/app_icon{ext}", style="dim")

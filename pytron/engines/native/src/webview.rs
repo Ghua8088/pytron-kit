@@ -432,8 +432,31 @@ impl NativeWebview {
                                     }
                                 }
 
-                                UserEvent::CreateTray(icon_path, tooltip) => {
-                                    if let Ok(ic) = load_icon(std::path::Path::new(&icon_path)) {
+                                UserEvent::CreateTray(tooltip, icon_path) => {
+                                    let mut final_icon = None;
+
+                                    if let Some(path) = icon_path {
+                                        if let Ok(ic) = load_icon(std::path::Path::new(&path)) {
+                                            final_icon = Some(ic);
+                                        } else {
+                                             println!("[PYTRON NATIVE] Warning: Failed to load tray icon at '{}'. Using default.", path);
+                                        }
+                                    }
+
+                                    // Fallback Generation (Blue Square) if no icon provided or load failed
+                                    if final_icon.is_none() {
+                                        let w = 32u32;
+                                        let h = 32u32;
+                                        let mut buffer = Vec::with_capacity((w * h * 4) as usize);
+                                        for _ in 0..(w * h) {
+                                            buffer.extend_from_slice(&[0, 122, 204, 255]); // #007ACC (VS Code Blue-ish)
+                                        }
+                                        if let Ok(ic) = tray_icon::Icon::from_rgba(buffer, w, h) {
+                                            final_icon = Some(ic);
+                                        }
+                                    }
+
+                                    if let Some(ic) = final_icon {
                                         let menu = Menu::new();
                                         let show_item = MenuItemBuilder::new().text("Show App").id("1000".into()).enabled(true).build();
                                         let quit_item = MenuItemBuilder::new().text("Quit").id("1001".into()).enabled(true).build();
@@ -442,7 +465,11 @@ impl NativeWebview {
                                         let _ = menu.append(&quit_item);
 
                                         let tray_res = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip(&tooltip).with_icon(ic).build();
-                                        if let Ok(t) = tray_res { state.tray = Some(t); }
+                                        
+                                        match tray_res {
+                                            Ok(t) => { state.tray = Some(t); }
+                                            Err(e) => { println!("[PYTRON NATIVE] Failed to create tray: {}", e); }
+                                        }
                                     }
                                 }
                                 UserEvent::TrayMenuClick(id) => {
@@ -648,7 +675,7 @@ impl NativeWebview {
         let _ = self.proxy.send_event(UserEvent::SetPreventClose(p));
     }
     
-    pub fn create_tray(&self, icon_path: String, tooltip: String) {
-        let _ = self.proxy.send_event(UserEvent::CreateTray(icon_path, tooltip));
+    pub fn create_tray(&self, tooltip: String, icon_path: Option<String>) {
+        let _ = self.proxy.send_event(UserEvent::CreateTray(tooltip, icon_path));
     }
 }
